@@ -1,0 +1,248 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  COMPANY_ADMIN
+  CUSTOMER
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  BLOCKED
+}
+
+enum CompanyStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum ServiceType {
+  BILLBOARDS
+  FREELANCERS
+  MARKETING
+  EXHIBITIONS
+}
+
+enum ServiceSubscriptionStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum BillboardStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  ARCHIVED
+}
+
+enum BillboardType {
+  DIGITAL
+  PRINTED
+}
+
+enum PricingUnit {
+  DAY
+  WEEK
+  MONTH
+  CUSTOM
+}
+
+enum BookingRequestStatus {
+  PENDING
+  CONTACTED
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+}
+
+enum NotificationType {
+  BILLBOARD_SUBMITTED
+  BOOKING_REQUEST_CREATED
+  BOOKING_REQUEST_STATUS_CHANGED
+  SYSTEM
+}
+
+model User {
+  id               String     @id @default(uuid()) @db.Uuid
+  email            String     @unique
+  passwordHash     String?
+  fullName         String
+  phone            String?
+  role             UserRole
+  status           UserStatus @default(ACTIVE)
+  companyId        String?    @db.Uuid
+  refreshTokenHash String?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  deletedAt        DateTime?
+
+  company         Company?         @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  bookingRequests BookingRequest[]
+  notifications   Notification[]
+
+  @@index([role])
+  @@index([companyId])
+}
+
+model Notification {
+  id         String           @id @default(uuid()) @db.Uuid
+  userId     String?          @db.Uuid
+  role       UserRole?
+  title      String
+  message    String
+  type       NotificationType
+  entityType String?
+  entityId   String?
+  readAt     DateTime?
+  createdAt  DateTime         @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([role])
+  @@index([readAt])
+  @@index([createdAt])
+  @@index([type])
+}
+
+model Company {
+  id        String        @id @default(uuid()) @db.Uuid
+  name      String
+  email     String?
+  phone     String?
+  status    CompanyStatus @default(ACTIVE)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  deletedAt DateTime?
+
+  users                User[]
+  serviceSubscriptions CompanyServiceSubscription[]
+  billboards           Billboard[]
+
+  @@index([status])
+}
+
+model CompanyServiceSubscription {
+  id          String                    @id @default(uuid()) @db.Uuid
+  companyId   String                    @db.Uuid
+  serviceType ServiceType
+  status      ServiceSubscriptionStatus @default(ACTIVE)
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  @@unique([companyId, serviceType])
+  @@index([companyId])
+  @@index([serviceType])
+  @@index([status])
+}
+
+model Billboard {
+  id              String          @id @default(uuid()) @db.Uuid
+  companyId       String          @db.Uuid
+  title           String
+  description     String?
+  country         String
+  province        String
+  city            String
+  addressText     String?
+  latitude        Decimal         @db.Decimal(10, 7)
+  longitude       Decimal         @db.Decimal(10, 7)
+  width           Decimal?        @db.Decimal(10, 2)
+  height          Decimal?        @db.Decimal(10, 2)
+  type            BillboardType
+  hasLighting     Boolean         @default(false)
+  price           Decimal?        @db.Decimal(12, 2)
+  pricingUnit     PricingUnit     @default(MONTH)
+  currency        String          @default("USD")
+  status          BillboardStatus @default(DRAFT)
+  rejectionReason String?
+  approvedAt      DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  deletedAt       DateTime?
+
+  company            Company                      @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  media              BillboardMedia[]
+  unavailablePeriods BillboardUnavailablePeriod[]
+  bookingRequests    BookingRequest[]
+
+  @@index([companyId])
+  @@index([status])
+  @@index([city])
+  @@index([type])
+  @@index([latitude, longitude])
+}
+
+model BillboardMedia {
+  id          String    @id @default(uuid()) @db.Uuid
+  billboardId String    @db.Uuid
+  url         String
+  type        MediaType @default(IMAGE)
+  isMain      Boolean   @default(false)
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+
+  billboard Billboard @relation(fields: [billboardId], references: [id], onDelete: Cascade)
+
+  @@index([billboardId])
+  @@index([billboardId, isMain])
+}
+
+model BillboardUnavailablePeriod {
+  id          String   @id @default(uuid()) @db.Uuid
+  billboardId String   @db.Uuid
+  startDate   DateTime
+  endDate     DateTime
+  reason      String?
+  createdAt   DateTime @default(now())
+
+  billboard Billboard @relation(fields: [billboardId], references: [id], onDelete: Cascade)
+
+  @@index([billboardId])
+  @@index([billboardId, startDate, endDate])
+}
+
+model BookingRequest {
+  id               String               @id @default(uuid()) @db.Uuid
+  billboardId      String               @db.Uuid
+  customerId       String               @db.Uuid
+  startDate        DateTime
+  endDate          DateTime
+  customerFullName String
+  customerPhone    String
+  customerEmail    String
+  customerCompany  String?
+  customerNotes    String?
+  estimatedPrice   Decimal?             @db.Decimal(12, 2)
+  pricingUnit      PricingUnit
+  currency         String
+  status           BookingRequestStatus @default(PENDING)
+  adminNotes       String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  deletedAt        DateTime?
+
+  billboard Billboard @relation(fields: [billboardId], references: [id], onDelete: Restrict)
+  customer  User      @relation(fields: [customerId], references: [id], onDelete: Restrict)
+
+  @@index([billboardId])
+  @@index([customerId])
+  @@index([status])
+  @@index([startDate, endDate])
+}

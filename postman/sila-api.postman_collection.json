@@ -1,0 +1,642 @@
+{
+  "info": {
+    "_postman_id": "3f793a5b-dfd8-40fb-aee4-sila-api",
+    "name": "Sila API",
+    "description": "Postman collection for the Sila NestJS backend. Base URL is configured by the `base_url` environment variable and should include `/api/v1`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Get Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/health"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Super Admin Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const data = json.data || json;",
+                  "if (data.accessToken) pm.environment.set('super_admin_access_token', data.accessToken);",
+                  "if (data.refreshToken) pm.environment.set('super_admin_refresh_token', data.refreshToken);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@sila.local\",\n  \"password\": \"Admin123456!\"\n}"
+            },
+            "url": "{{base_url}}/auth/login"
+          }
+        },
+        {
+          "name": "Company Admin Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const data = json.data || json;",
+                  "if (data.accessToken) pm.environment.set('company_admin_access_token', data.accessToken);",
+                  "if (data.refreshToken) pm.environment.set('company_admin_refresh_token', data.refreshToken);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"company.admin@example.com\",\n  \"password\": \"Admin123456!\"\n}"
+            },
+            "url": "{{base_url}}/auth/login"
+          }
+        },
+        {
+          "name": "Register Customer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const data = json.data || json;",
+                  "if (data.accessToken) pm.environment.set('customer_access_token', data.accessToken);",
+                  "if (data.refreshToken) pm.environment.set('customer_refresh_token', data.refreshToken);",
+                  "if (data.user && data.user.id) pm.environment.set('customer_user_id', data.user.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Customer User\",\n  \"email\": \"customer@example.com\",\n  \"phone\": \"+963900000000\",\n  \"password\": \"Customer123!\"\n}"
+            },
+            "url": "{{base_url}}/auth/register/customer"
+          }
+        },
+        {
+          "name": "Customer Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const data = json.data || json;",
+                  "if (data.accessToken) pm.environment.set('customer_access_token', data.accessToken);",
+                  "if (data.refreshToken) pm.environment.set('customer_refresh_token', data.refreshToken);",
+                  "if (data.user && data.user.id) pm.environment.set('customer_user_id', data.user.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"customer@example.com\",\n  \"password\": \"Customer123!\"\n}"
+            },
+            "url": "{{base_url}}/auth/login"
+          }
+        },
+        {
+          "name": "Refresh Customer Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const data = json.data || json;",
+                  "if (data.accessToken) pm.environment.set('customer_access_token', data.accessToken);",
+                  "if (data.refreshToken) pm.environment.set('customer_refresh_token', data.refreshToken);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{customer_refresh_token}}\"\n}"
+            },
+            "url": "{{base_url}}/auth/refresh"
+          }
+        },
+        {
+          "name": "Auth Me",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customer_access_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/auth/me"
+          }
+        },
+        {
+          "name": "Logout Customer",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customer_access_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/auth/logout"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Companies",
+      "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] },
+      "item": [
+        {
+          "name": "Create Company",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const data = pm.response.json().data;",
+                  "if (data && data.id) pm.environment.set('company_id', data.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sila Media Partner\",\n  \"email\": \"partner@example.com\",\n  \"phone\": \"+963900000001\",\n  \"serviceTypes\": [\"BILLBOARDS\"]\n}"
+            },
+            "url": "{{base_url}}/companies"
+          }
+        },
+        {
+          "name": "List Companies",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/companies?page=1&limit=20&serviceType=BILLBOARDS"
+          }
+        },
+        {
+          "name": "Get Company",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/companies/{{company_id}}"
+          }
+        },
+        {
+          "name": "Update Company",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sila Media Partner Updated\",\n  \"status\": \"ACTIVE\"\n}"
+            },
+            "url": "{{base_url}}/companies/{{company_id}}"
+          }
+        },
+        {
+          "name": "Update Company Services",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"serviceTypes\": [\"BILLBOARDS\", \"MARKETING\"]\n}"
+            },
+            "url": "{{base_url}}/companies/{{company_id}}/services"
+          }
+        },
+        {
+          "name": "Delete Company",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{base_url}}/companies/{{company_id}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Create Company Admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const data = pm.response.json().data;",
+                  "if (data && data.id) pm.environment.set('company_admin_user_id', data.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyId\": \"{{company_id}}\",\n  \"fullName\": \"Company Admin\",\n  \"email\": \"company.admin@example.com\",\n  \"phone\": \"+963900000002\",\n  \"password\": \"Admin123456!\"\n}"
+            },
+            "url": "{{base_url}}/users/company-admins"
+          }
+        },
+        {
+          "name": "List Users",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/users?page=1&limit=20"
+          }
+        },
+        {
+          "name": "Get User",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/users/{{company_admin_user_id}}"
+          }
+        },
+        {
+          "name": "Update User",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"fullName\": \"Company Admin Updated\",\n  \"status\": \"ACTIVE\"\n}" },
+            "url": "{{base_url}}/users/{{company_admin_user_id}}"
+          }
+        },
+        {
+          "name": "Change User Password",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"password\": \"Admin123456!\"\n}" },
+            "url": "{{base_url}}/users/{{company_admin_user_id}}/password"
+          }
+        },
+        {
+          "name": "Get My Profile",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customer_access_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/users/me"
+          }
+        },
+        {
+          "name": "Update My Profile",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customer_access_token}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"fullName\": \"Customer User Updated\",\n  \"phone\": \"+963900000003\"\n}" },
+            "url": "{{base_url}}/users/me"
+          }
+        },
+        {
+          "name": "Change My Password",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customer_access_token}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"currentPassword\": \"Customer123!\",\n  \"newPassword\": \"Customer123!\"\n}" },
+            "url": "{{base_url}}/users/me/password"
+          }
+        },
+        {
+          "name": "Delete User",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] },
+            "method": "DELETE",
+            "header": [],
+            "url": "{{base_url}}/users/{{company_admin_user_id}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Partner Billboards",
+      "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] },
+      "item": [
+        {
+          "name": "Create Billboard",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const data = pm.response.json().data;",
+                  "if (data && data.id) pm.environment.set('billboard_id', data.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Main highway LED screen\",\n  \"country\": \"Syria\",\n  \"province\": \"Damascus\",\n  \"city\": \"Damascus\",\n  \"latitude\": 33.5138,\n  \"longitude\": 36.2765,\n  \"type\": \"DIGITAL\",\n  \"description\": \"High-visibility location\",\n  \"hasLighting\": true,\n  \"price\": 1200,\n  \"pricingUnit\": \"MONTH\",\n  \"currency\": \"USD\",\n  \"submitForApproval\": true\n}"
+            },
+            "url": "{{base_url}}/partner/billboards"
+          }
+        },
+        { "name": "List Partner Billboards", "request": { "method": "GET", "header": [], "url": "{{base_url}}/partner/billboards?page=1&limit=20" } },
+        { "name": "Get Partner Billboard", "request": { "method": "GET", "header": [], "url": "{{base_url}}/partner/billboards/{{billboard_id}}" } },
+        {
+          "name": "Update Partner Billboard",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Updated highway LED screen\",\n  \"price\": 1300\n}" },
+            "url": "{{base_url}}/partner/billboards/{{billboard_id}}"
+          }
+        },
+        { "name": "Submit Billboard", "request": { "method": "PATCH", "header": [], "url": "{{base_url}}/partner/billboards/{{billboard_id}}/submit" } },
+        {
+          "name": "Add Media",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const data = pm.response.json().data;",
+                  "if (data && data.id) pm.environment.set('media_id', data.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"url\": \"https://example.com/billboards/main.jpg\",\n  \"type\": \"IMAGE\",\n  \"isMain\": true,\n  \"sortOrder\": 0\n}" },
+            "url": "{{base_url}}/partner/billboards/{{billboard_id}}/media"
+          }
+        },
+        {
+          "name": "Upload Billboard Media",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const data = pm.response.json().data;",
+                  "if (data && data.id) pm.environment.set('media_id', data.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": [] },
+                { "key": "isMain", "value": "true", "type": "text" },
+                { "key": "sortOrder", "value": "0", "type": "text" }
+              ]
+            },
+            "url": "{{base_url}}/partner/billboards/{{billboard_id}}/media/upload"
+          }
+        },
+        { "name": "List Media", "request": { "method": "GET", "header": [], "url": "{{base_url}}/partner/billboards/{{billboard_id}}/media" } },
+        { "name": "Update Media", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"isMain\": true,\n  \"sortOrder\": 1\n}" }, "url": "{{base_url}}/partner/billboards/{{billboard_id}}/media/{{media_id}}" } },
+        { "name": "Delete Media", "request": { "method": "DELETE", "header": [], "url": "{{base_url}}/partner/billboards/{{billboard_id}}/media/{{media_id}}" } },
+        { "name": "Delete Partner Billboard", "request": { "method": "DELETE", "header": [], "url": "{{base_url}}/partner/billboards/{{billboard_id}}" } }
+      ]
+    },
+    {
+      "name": "Admin Billboards",
+      "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] },
+      "item": [
+        { "name": "List Admin Billboards", "request": { "method": "GET", "header": [], "url": "{{base_url}}/admin/billboards?page=1&limit=20" } },
+        { "name": "Get Admin Billboard", "request": { "method": "GET", "header": [], "url": "{{base_url}}/admin/billboards/{{billboard_id}}" } },
+        { "name": "Approve Billboard", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{}" }, "url": "{{base_url}}/admin/billboards/{{billboard_id}}/approve" } },
+        { "name": "Reject Billboard", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Please improve listing details.\"\n}" }, "url": "{{base_url}}/admin/billboards/{{billboard_id}}/reject" } },
+        { "name": "Archive Billboard", "request": { "method": "PATCH", "header": [], "url": "{{base_url}}/admin/billboards/{{billboard_id}}/archive" } },
+        { "name": "List Admin Billboard Media", "request": { "method": "GET", "header": [], "url": "{{base_url}}/admin/billboards/{{billboard_id}}/media" } },
+        {
+          "name": "Upload Admin Billboard Media",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const data = pm.response.json().data;",
+                  "if (data && data.id) pm.environment.set('media_id', data.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": [] },
+                { "key": "isMain", "value": "false", "type": "text" },
+                { "key": "sortOrder", "value": "1", "type": "text" }
+              ]
+            },
+            "url": "{{base_url}}/admin/billboards/{{billboard_id}}/media/upload"
+          }
+        },
+        { "name": "List Admin Unavailable Periods", "request": { "method": "GET", "header": [], "url": "{{base_url}}/admin/billboards/{{billboard_id}}/unavailable-periods" } }
+      ]
+    },
+    {
+      "name": "Public Billboards",
+      "item": [
+        { "name": "List Public Billboards", "request": { "method": "GET", "header": [], "url": "{{base_url}}/public/billboards?page=1&limit=20&city=Damascus" } },
+        { "name": "Get Public Billboard", "request": { "method": "GET", "header": [], "url": "{{base_url}}/public/billboards/{{billboard_id}}" } },
+        { "name": "Get Similar Billboards", "request": { "method": "GET", "header": [], "url": "{{base_url}}/public/billboards/{{billboard_id}}/similar?limitSimilar=6" } }
+      ]
+    },
+    {
+      "name": "Availability",
+      "item": [
+        {
+          "name": "Check Public Availability",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/public/billboards/{{billboard_id}}/availability?startDate=2026-06-01T00:00:00.000Z&endDate=2026-06-10T00:00:00.000Z"
+          }
+        },
+        {
+          "name": "Create Unavailable Period",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const data = pm.response.json().data;",
+                  "if (data && data.id) pm.environment.set('unavailable_period_id', data.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"startDate\": \"2026-06-01T00:00:00.000Z\",\n  \"endDate\": \"2026-06-10T00:00:00.000Z\",\n  \"reason\": \"Maintenance or reserved offline\"\n}" },
+            "url": "{{base_url}}/partner/billboards/{{billboard_id}}/unavailable-periods"
+          }
+        },
+        {
+          "name": "List Partner Unavailable Periods",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/partner/billboards/{{billboard_id}}/unavailable-periods"
+          }
+        },
+        {
+          "name": "Update Unavailable Period",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Updated maintenance note\"\n}" },
+            "url": "{{base_url}}/partner/billboards/{{billboard_id}}/unavailable-periods/{{unavailable_period_id}}"
+          }
+        },
+        {
+          "name": "Delete Unavailable Period",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] },
+            "method": "DELETE",
+            "header": [],
+            "url": "{{base_url}}/partner/billboards/{{billboard_id}}/unavailable-periods/{{unavailable_period_id}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Booking Requests",
+      "item": [
+        {
+          "name": "Create Customer Booking Request",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const data = pm.response.json().data;",
+                  "if (data && data.id) pm.environment.set('booking_request_id', data.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customer_access_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"startDate\": \"2026-07-01T00:00:00.000Z\",\n  \"endDate\": \"2026-07-10T00:00:00.000Z\",\n  \"customerCompany\": \"Acme LLC\",\n  \"customerNotes\": \"Interested in campaign launch dates.\"\n}" },
+            "url": "{{base_url}}/customer/billboards/{{billboard_id}}/booking-requests"
+          }
+        },
+        { "name": "List Customer Booking Requests", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customer_access_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": "{{base_url}}/customer/booking-requests?page=1&limit=20" } },
+        { "name": "Get Customer Booking Request", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customer_access_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": "{{base_url}}/customer/booking-requests/{{booking_request_id}}" } },
+        { "name": "Cancel Customer Booking Request", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customer_access_token}}", "type": "string" }] }, "method": "PATCH", "header": [], "url": "{{base_url}}/customer/booking-requests/{{booking_request_id}}/cancel" } },
+        { "name": "List Partner Booking Requests", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": "{{base_url}}/partner/booking-requests?page=1&limit=20" } },
+        { "name": "List Admin Booking Requests", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": "{{base_url}}/admin/booking-requests?page=1&limit=20" } },
+        { "name": "Get Admin Booking Request", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": "{{base_url}}/admin/booking-requests/{{booking_request_id}}" } },
+        {
+          "name": "Update Booking Status",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"CONTACTED\",\n  \"adminNotes\": \"Customer contacted by operations team.\"\n}" },
+            "url": "{{base_url}}/admin/booking-requests/{{booking_request_id}}/status"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] },
+      "item": [
+        {
+          "name": "List Notifications",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const items = json.data || [];",
+                  "if (Array.isArray(items) && items.length > 0) pm.environment.set('notification_id', items[0].id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/notifications?page=1&limit=20"
+          }
+        },
+        { "name": "List Unread Notifications", "request": { "method": "GET", "header": [], "url": "{{base_url}}/notifications?page=1&limit=20&unreadOnly=true" } },
+        { "name": "Mark Notification Read", "request": { "method": "PATCH", "header": [], "url": "{{base_url}}/notifications/{{notification_id}}/read" } },
+        { "name": "Mark All Notifications Read", "request": { "method": "PATCH", "header": [], "url": "{{base_url}}/notifications/read-all" } }
+      ]
+    }
+  ]
+}
