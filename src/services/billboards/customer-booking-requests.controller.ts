@@ -13,12 +13,24 @@ import { Role } from '../../shared/auth/enums/role.enum';
 import type { AuthenticatedUser } from '../../shared/auth/interfaces/authenticated-user.interface';
 import { BillboardsService } from './billboards.service';
 import { CreateBookingRequestDto } from './dto/create-booking-request.dto';
+import { CreateMultiBookingRequestDto } from './dto/create-multi-booking-request.dto';
 import { QueryBookingRequestsDto } from './dto/query-booking-requests.dto';
 
 @Auth(Role.CUSTOMER)
 @Controller()
 export class CustomerBookingRequestsController {
   constructor(private readonly billboardsService: BillboardsService) {}
+
+  @Post('customer/bookings')
+  createMulti(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() createBookingDto: CreateMultiBookingRequestDto,
+  ) {
+    return this.billboardsService.createCustomerMultiBookingRequest(
+      user,
+      createBookingDto,
+    );
+  }
 
   @Post('customer/billboards/:id/booking-requests')
   create(
@@ -33,6 +45,14 @@ export class CustomerBookingRequestsController {
     );
   }
 
+  @Get('customer/bookings')
+  findAllBookings(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: QueryBookingRequestsDto,
+  ) {
+    return this.billboardsService.findCustomerBookingRequests(user, query);
+  }
+
   @Get('customer/booking-requests')
   findAll(
     @CurrentUser() user: AuthenticatedUser,
@@ -41,9 +61,22 @@ export class CustomerBookingRequestsController {
     return this.billboardsService.findCustomerBookingRequests(user, query);
   }
 
+  @Get('customer/bookings/:id')
+  findOneBooking(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ) {
+    return this.billboardsService.findCustomerBookingRequest(user, id);
+  }
+
   @Get('customer/booking-requests/:id')
   findOne(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.billboardsService.findCustomerBookingRequest(user, id);
+  }
+
+  @Patch('customer/bookings/:id/cancel')
+  cancelBooking(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.billboardsService.cancelCustomerBookingRequest(user, id);
   }
 
   @Patch('customer/booking-requests/:id/cancel')

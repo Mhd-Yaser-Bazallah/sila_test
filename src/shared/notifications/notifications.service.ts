@@ -6,6 +6,7 @@ import { NotificationsRepository } from './notifications.repository';
 
 interface CreateNotificationInput {
   userId?: string;
+  companyId?: string;
   role?: UserRole;
   title: string;
   message: string;
@@ -23,6 +24,9 @@ export class NotificationsService {
   create(input: CreateNotificationInput) {
     return this.notificationsRepository.createNotification({
       user: input.userId ? { connect: { id: input.userId } } : undefined,
+      company: input.companyId
+        ? { connect: { id: input.companyId } }
+        : undefined,
       role: input.role,
       title: input.title,
       message: input.message,
@@ -66,6 +70,16 @@ export class NotificationsService {
   private buildVisibleWhere(
     user: AuthenticatedUser,
   ): Prisma.NotificationWhereInput {
+    if (user.role === UserRole.COMPANY_ADMIN) {
+      return {
+        OR: [
+          { userId: user.id },
+          ...(user.companyId ? [{ companyId: user.companyId }] : []),
+          { role: UserRole.COMPANY_ADMIN, companyId: null },
+        ],
+      };
+    }
+
     return {
       OR: [{ userId: user.id }, { role: user.role }],
     };

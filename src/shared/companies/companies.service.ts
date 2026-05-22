@@ -8,7 +8,10 @@ import {
   Prisma,
   ServiceSubscriptionStatus,
 } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
+import { BCRYPT_SALT_ROUNDS } from '../auth/constants/auth.constants';
 import { CreateCompanyDto } from './dto/create-company.dto';
+import { CreateCompanyWithAdminDto } from './dto/create-company-with-admin.dto';
 import { QueryCompaniesDto } from './dto/query-companies.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 import { UpdateCompanyServicesDto } from './dto/update-company-services.dto';
@@ -37,6 +40,32 @@ export class CompaniesService {
             })),
           }
         : undefined,
+    });
+  }
+
+  async createWithAdmin(createCompanyWithAdminDto: CreateCompanyWithAdminDto) {
+    const companyEmail = this.normalizeEmail(createCompanyWithAdminDto.email);
+    const adminEmail = this.normalizeRequiredEmail(
+      createCompanyWithAdminDto.admin.email,
+    );
+    const passwordHash = await bcrypt.hash(
+      createCompanyWithAdminDto.admin.password,
+      BCRYPT_SALT_ROUNDS,
+    );
+
+    return this.companiesRepository.createCompanyWithAdmin({
+      company: {
+        name: createCompanyWithAdminDto.name,
+        email: companyEmail,
+        phone: createCompanyWithAdminDto.phone,
+        serviceTypes: createCompanyWithAdminDto.serviceTypes,
+      },
+      admin: {
+        fullName: createCompanyWithAdminDto.admin.fullName,
+        email: adminEmail,
+        phone: createCompanyWithAdminDto.admin.phone,
+        passwordHash,
+      },
     });
   }
 
@@ -140,5 +169,9 @@ export class CompaniesService {
 
   private normalizeEmail(email?: string): string | undefined {
     return email?.trim().toLowerCase();
+  }
+
+  private normalizeRequiredEmail(email: string): string {
+    return email.trim().toLowerCase();
   }
 }

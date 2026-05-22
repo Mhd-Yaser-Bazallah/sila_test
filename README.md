@@ -165,15 +165,15 @@ Expected response shape:
 
 `SUPER_ADMIN`
 
-Platform admin. Can manage companies, users, billboards, booking requests, and notifications.
+Platform admin. Can manage companies, users, billboards, road packages, offers, and notifications. Booking access is monitoring-only.
 
 `COMPANY_ADMIN`
 
-Partner/company user. Can manage only their own company billboards, billboard media, unavailable periods, and see partner-safe booking request data.
+Partner/company user. Can manage only their own company billboards, road packages, offers, billboard media, unavailable periods, and approve or reject booking items assigned to their company.
 
 `CUSTOMER`
 
-Customer user. Can browse public billboards, check availability, create booking requests, view their own booking requests, and manage their own profile.
+Customer user. Can browse public billboards and offers, check availability, create multi-item booking requests, view their own bookings, and manage their own profile.
 
 ## Main API Groups
 
@@ -183,8 +183,11 @@ Customer user. Can browse public billboards, check availability, create booking 
 - Partner Billboards
 - Admin Billboards
 - Public Billboards
+- Public Offers
 - Availability
-- Booking Requests
+- Customer Bookings
+- Partner Booking Items
+- Admin Bookings
 - Notifications
 
 ## Postman Usage
@@ -216,9 +219,10 @@ Recommended testing flow:
 9. Public Billboard Browsing
 10. Register Customer
 11. Check Availability
-12. Create Booking Request
-13. Admin Update Booking Status
-14. Notifications
+12. Create Customer Booking
+13. Partner Approve/Reject Booking Items
+14. Admin Monitor Bookings
+15. Notifications
 
 The Postman collection stores common IDs and tokens automatically when possible, including access tokens, refresh tokens, company IDs, billboard IDs, media IDs, booking request IDs, and notification IDs.
 
@@ -272,10 +276,13 @@ Uploaded files are ignored by Git. Placeholder `.gitkeep` files keep the upload 
 
 - Booking does not include payment yet.
 - Booking is request-based, not direct payment booking.
+- Customer bookings can contain individual billboards, road packages, and offers.
+- Partner companies approve or reject only their own booking items.
+- Admin booking endpoints are monitoring-only.
 - Public billboard browsing is open.
-- Creating booking requests requires authenticated `CUSTOMER` access.
-- Approved booking requests and unavailable periods block future availability.
-- Partners cannot see customer personal data in partner booking request responses.
+- Creating bookings requires authenticated `CUSTOMER` access.
+- Approved booking items and unavailable periods block future availability.
+- Partners cannot see customer email or phone in partner booking item responses.
 
 ## Useful Scripts
 

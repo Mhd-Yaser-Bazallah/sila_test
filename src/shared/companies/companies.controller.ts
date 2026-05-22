@@ -12,6 +12,7 @@ import { Role } from '../auth/enums/role.enum';
 import { Auth } from '../auth/decorators/auth.decorator';
 import { CompaniesService } from './companies.service';
 import { CreateCompanyDto } from './dto/create-company.dto';
+import { CreateCompanyWithAdminDto } from './dto/create-company-with-admin.dto';
 import { QueryCompaniesDto } from './dto/query-companies.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 import { UpdateCompanyServicesDto } from './dto/update-company-services.dto';
@@ -24,6 +25,13 @@ export class CompaniesController {
   @Post()
   create(@Body() createCompanyDto: CreateCompanyDto) {
     return this.companiesService.create(createCompanyDto);
+  }
+
+  @Post('with-admin')
+  createWithAdmin(
+    @Body() createCompanyWithAdminDto: CreateCompanyWithAdminDto,
+  ) {
+    return this.companiesService.createWithAdmin(createCompanyWithAdminDto);
   }
 
   @Get()

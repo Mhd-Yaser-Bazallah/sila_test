@@ -203,6 +203,31 @@
           }
         },
         {
+          "name": "Create Company With Admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const data = pm.response.json().data;",
+                  "if (data && data.company && data.company.id) pm.environment.set('company_id', data.company.id);",
+                  "if (data && data.admin && data.admin.id) pm.environment.set('company_admin_user_id', data.admin.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sila Media Partner\",\n  \"email\": \"partner@example.com\",\n  \"phone\": \"+963900000001\",\n  \"serviceTypes\": [\"BILLBOARDS\"],\n  \"admin\": {\n    \"fullName\": \"Company Admin\",\n    \"email\": \"company.admin@example.com\",\n    \"phone\": \"+963900000002\",\n    \"password\": \"Admin123456!\"\n  }\n}"
+            },
+            "url": "{{base_url}}/companies/with-admin"
+          }
+        },
+        {
           "name": "List Companies",
           "request": {
             "method": "GET",
@@ -454,6 +479,93 @@
       ]
     },
     {
+      "name": "Partner Road Packages",
+      "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] },
+      "item": [
+        {
+          "name": "Create Road Package",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const data = pm.response.json().data;",
+                  "if (data && data.id) pm.environment.set('road_package_id', data.id);",
+                  "if (data && data.billboards && data.billboards.length > 0) pm.environment.set('billboard_id', data.billboards[0].id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Airport Road Package\",\n  \"description\": \"Billboards along the airport road\",\n  \"startLatitude\": 33.5,\n  \"startLongitude\": 36.2,\n  \"endLatitude\": 33.7,\n  \"endLongitude\": 36.5,\n  \"billboardsCount\": 10,\n  \"distanceBetweenBoards\": 500,\n  \"direction\": \"GOING\",\n  \"status\": \"DRAFT\",\n  \"billboardDefaults\": {\n    \"country\": \"Syria\",\n    \"province\": \"Damascus\",\n    \"city\": \"Damascus\",\n    \"type\": \"PRINTED\",\n    \"printedSubtype\": \"FLEX\",\n    \"width\": 4,\n    \"height\": 3,\n    \"hasLighting\": false,\n    \"lightingPrice\": 0,\n    \"price\": 500,\n    \"pricingUnit\": \"MONTH\",\n    \"currency\": \"USD\",\n    \"taxRatePercent\": 10\n  }\n}"
+            },
+            "url": "{{base_url}}/partner/road-packages"
+          }
+        },
+        { "name": "List Partner Road Packages", "request": { "method": "GET", "header": [], "url": "{{base_url}}/partner/road-packages?page=1&limit=20&search=Airport" } },
+        { "name": "Get Partner Road Package", "request": { "method": "GET", "header": [], "url": "{{base_url}}/partner/road-packages/{{road_package_id}}" } },
+        {
+          "name": "Update Partner Road Package",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Airport Road Package Updated\",\n  \"direction\": \"BOTH\",\n  \"distanceBetweenBoards\": 550\n}" },
+            "url": "{{base_url}}/partner/road-packages/{{road_package_id}}"
+          }
+        },
+        { "name": "Submit Road Package", "request": { "method": "PATCH", "header": [], "url": "{{base_url}}/partner/road-packages/{{road_package_id}}/submit" } },
+        { "name": "Delete Road Package", "request": { "method": "DELETE", "header": [], "url": "{{base_url}}/partner/road-packages/{{road_package_id}}" } }
+      ]
+    },
+    {
+      "name": "Partner Offers",
+      "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] },
+      "item": [
+        {
+          "name": "Create Offer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const data = pm.response.json().data;",
+                  "if (data && data.id) pm.environment.set('offer_id', data.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Summer Billboard Bundle\",\n  \"description\": \"Discounted package for selected billboards\",\n  \"startsAt\": \"2026-06-01T00:00:00.000Z\",\n  \"endsAt\": \"2026-07-01T00:00:00.000Z\",\n  \"discountedTotalPrice\": 3500,\n  \"currency\": \"USD\",\n  \"billboardIds\": [\"{{billboard_id}}\", \"{{second_billboard_id}}\"],\n  \"submitForApproval\": false\n}"
+            },
+            "url": "{{base_url}}/partner/offers"
+          }
+        },
+        { "name": "List Partner Offers", "request": { "method": "GET", "header": [], "url": "{{base_url}}/partner/offers?page=1&limit=20&activeOnly=false" } },
+        { "name": "Get Partner Offer", "request": { "method": "GET", "header": [], "url": "{{base_url}}/partner/offers/{{offer_id}}" } },
+        {
+          "name": "Update Partner Offer",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Summer Billboard Bundle Updated\",\n  \"discountedTotalPrice\": 3200\n}" },
+            "url": "{{base_url}}/partner/offers/{{offer_id}}"
+          }
+        },
+        { "name": "Submit Offer", "request": { "method": "PATCH", "header": [], "url": "{{base_url}}/partner/offers/{{offer_id}}/submit" } },
+        { "name": "Delete Offer", "request": { "method": "DELETE", "header": [], "url": "{{base_url}}/partner/offers/{{offer_id}}" } }
+      ]
+    },
+    {
       "name": "Admin Billboards",
       "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] },
       "item": [
@@ -495,11 +607,56 @@
       ]
     },
     {
+      "name": "Admin Road Packages",
+      "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] },
+      "item": [
+        { "name": "List Admin Road Packages", "request": { "method": "GET", "header": [], "url": "{{base_url}}/admin/road-packages?page=1&limit=20&status=PENDING_APPROVAL" } },
+        { "name": "Get Admin Road Package", "request": { "method": "GET", "header": [], "url": "{{base_url}}/admin/road-packages/{{road_package_id}}" } },
+        { "name": "Approve Road Package", "request": { "method": "PATCH", "header": [], "url": "{{base_url}}/admin/road-packages/{{road_package_id}}/approve" } },
+        {
+          "name": "Reject Road Package",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Please revise package details.\"\n}" },
+            "url": "{{base_url}}/admin/road-packages/{{road_package_id}}/reject"
+          }
+        },
+        { "name": "Archive Road Package", "request": { "method": "PATCH", "header": [], "url": "{{base_url}}/admin/road-packages/{{road_package_id}}/archive" } }
+      ]
+    },
+    {
+      "name": "Admin Offers",
+      "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] },
+      "item": [
+        { "name": "List Admin Offers", "request": { "method": "GET", "header": [], "url": "{{base_url}}/admin/offers?page=1&limit=20&status=PENDING_APPROVAL" } },
+        { "name": "Get Admin Offer", "request": { "method": "GET", "header": [], "url": "{{base_url}}/admin/offers/{{offer_id}}" } },
+        { "name": "Approve Offer", "request": { "method": "PATCH", "header": [], "url": "{{base_url}}/admin/offers/{{offer_id}}/approve" } },
+        {
+          "name": "Reject Offer",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Please adjust the offer discount or billboards.\"\n}" },
+            "url": "{{base_url}}/admin/offers/{{offer_id}}/reject"
+          }
+        },
+        { "name": "Archive Offer", "request": { "method": "PATCH", "header": [], "url": "{{base_url}}/admin/offers/{{offer_id}}/archive" } }
+      ]
+    },
+    {
       "name": "Public Billboards",
       "item": [
         { "name": "List Public Billboards", "request": { "method": "GET", "header": [], "url": "{{base_url}}/public/billboards?page=1&limit=20&city=Damascus" } },
         { "name": "Get Public Billboard", "request": { "method": "GET", "header": [], "url": "{{base_url}}/public/billboards/{{billboard_id}}" } },
         { "name": "Get Similar Billboards", "request": { "method": "GET", "header": [], "url": "{{base_url}}/public/billboards/{{billboard_id}}/similar?limitSimilar=6" } }
+      ]
+    },
+    {
+      "name": "Public Offers",
+      "item": [
+        { "name": "List Public Offers", "request": { "method": "GET", "header": [], "url": "{{base_url}}/public/offers?page=1&limit=20" } },
+        { "name": "Get Public Offer", "request": { "method": "GET", "header": [], "url": "{{base_url}}/public/offers/{{offer_id}}" } }
       ]
     },
     {
@@ -566,17 +723,18 @@
       ]
     },
     {
-      "name": "Booking Requests",
+      "name": "Customer Bookings",
       "item": [
         {
-          "name": "Create Customer Booking Request",
+          "name": "Create Customer Booking",
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
                   "const data = pm.response.json().data;",
-                  "if (data && data.id) pm.environment.set('booking_request_id', data.id);"
+                  "if (data && data.id) pm.environment.set('booking_request_id', data.id);",
+                  "if (data && data.items && data.items.length > 0) pm.environment.set('booking_item_id', data.items[0].id);"
                 ],
                 "type": "text/javascript"
               }
@@ -586,26 +744,38 @@
             "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customer_access_token}}", "type": "string" }] },
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"startDate\": \"2026-07-01T00:00:00.000Z\",\n  \"endDate\": \"2026-07-10T00:00:00.000Z\",\n  \"customerCompany\": \"Acme LLC\",\n  \"customerNotes\": \"Interested in campaign launch dates.\"\n}" },
-            "url": "{{base_url}}/customer/billboards/{{billboard_id}}/booking-requests"
+            "body": { "mode": "raw", "raw": "{\n  \"items\": [\n    {\n      \"itemType\": \"BILLBOARD\",\n      \"billboardId\": \"{{billboard_id}}\",\n      \"startDate\": \"2026-07-01T00:00:00.000Z\",\n      \"endDate\": \"2026-07-10T00:00:00.000Z\"\n    },\n    {\n      \"itemType\": \"OFFER\",\n      \"offerId\": \"{{offer_id}}\",\n      \"startDate\": \"2026-07-01T00:00:00.000Z\",\n      \"endDate\": \"2026-07-10T00:00:00.000Z\"\n    }\n  ],\n  \"customerCompany\": \"Acme LLC\",\n  \"customerNotes\": \"Interested in campaign launch dates.\",\n  \"customerCompanyScope\": \"LOCAL\",\n  \"customerSector\": \"PRIVATE\"\n}" },
+            "url": "{{base_url}}/customer/bookings"
           }
         },
-        { "name": "List Customer Booking Requests", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customer_access_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": "{{base_url}}/customer/booking-requests?page=1&limit=20" } },
-        { "name": "Get Customer Booking Request", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customer_access_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": "{{base_url}}/customer/booking-requests/{{booking_request_id}}" } },
-        { "name": "Cancel Customer Booking Request", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customer_access_token}}", "type": "string" }] }, "method": "PATCH", "header": [], "url": "{{base_url}}/customer/booking-requests/{{booking_request_id}}/cancel" } },
-        { "name": "List Partner Booking Requests", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": "{{base_url}}/partner/booking-requests?page=1&limit=20" } },
-        { "name": "List Admin Booking Requests", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": "{{base_url}}/admin/booking-requests?page=1&limit=20" } },
-        { "name": "Get Admin Booking Request", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": "{{base_url}}/admin/booking-requests/{{booking_request_id}}" } },
+        { "name": "List Customer Bookings", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customer_access_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": "{{base_url}}/customer/bookings?page=1&limit=20" } },
+        { "name": "Get Customer Booking", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customer_access_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": "{{base_url}}/customer/bookings/{{booking_request_id}}" } },
+        { "name": "Cancel Customer Booking", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customer_access_token}}", "type": "string" }] }, "method": "PATCH", "header": [], "url": "{{base_url}}/customer/bookings/{{booking_request_id}}/cancel" } }
+      ]
+    },
+    {
+      "name": "Partner Booking Items",
+      "item": [
+        { "name": "List Partner Booking Items", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": "{{base_url}}/partner/booking-items?page=1&limit=20&status=PENDING" } },
+        { "name": "Get Partner Booking Item", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": "{{base_url}}/partner/booking-items/{{booking_item_id}}" } },
+        { "name": "Approve Booking Item", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] }, "method": "PATCH", "header": [], "url": "{{base_url}}/partner/booking-items/{{booking_item_id}}/approve" } },
         {
-          "name": "Update Booking Status",
+          "name": "Reject Booking Item",
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] },
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] },
             "method": "PATCH",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"status\": \"CONTACTED\",\n  \"adminNotes\": \"Customer contacted by operations team.\"\n}" },
-            "url": "{{base_url}}/admin/booking-requests/{{booking_request_id}}/status"
+            "body": { "mode": "raw", "raw": "{\n  \"partnerNotes\": \"Requested dates are not suitable.\"\n}" },
+            "url": "{{base_url}}/partner/booking-items/{{booking_item_id}}/reject"
           }
         }
+      ]
+    },
+    {
+      "name": "Admin Bookings",
+      "item": [
+        { "name": "List Admin Bookings", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": "{{base_url}}/admin/bookings?page=1&limit=20" } },
+        { "name": "Get Admin Booking", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": "{{base_url}}/admin/bookings/{{booking_request_id}}" } }
       ]
     },
     {

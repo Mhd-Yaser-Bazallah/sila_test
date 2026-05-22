@@ -10,10 +10,13 @@ import type { MultipartFile } from '@fastify/multipart';
 import type { FastifyRequest } from 'fastify';
 import {
   BillboardStatus,
+  BookingItemType,
+  BookingRequestItemStatus,
   BookingRequestStatus,
   BillboardType,
   MediaType,
   NotificationType,
+  PricingUnit,
   Prisma,
   ServiceSubscriptionStatus,
   ServiceType,
@@ -30,14 +33,26 @@ import { AddBillboardMediaDto } from './dto/add-billboard-media.dto';
 import { CheckAvailabilityDto } from './dto/check-availability.dto';
 import { CreateBookingRequestDto } from './dto/create-booking-request.dto';
 import { CreateBillboardDto } from './dto/create-billboard.dto';
+import {
+  CreateBookingItemDto,
+  CreateMultiBookingRequestDto,
+} from './dto/create-multi-booking-request.dto';
+import { CreateOfferDto } from './dto/create-offer.dto';
+import { CreateRoadBillboardPackageDto } from './dto/create-road-billboard-package.dto';
 import { CreateUnavailablePeriodDto } from './dto/create-unavailable-period.dto';
+import { QueryBookingItemsDto } from './dto/query-booking-items.dto';
 import { QueryBookingRequestsDto } from './dto/query-booking-requests.dto';
 import { QueryBillboardsDto } from './dto/query-billboards.dto';
+import { QueryOffersDto } from './dto/query-offers.dto';
+import { QueryRoadBillboardPackagesDto } from './dto/query-road-billboard-packages.dto';
 import { PublicQueryBillboardsDto } from './dto/public-query-billboards.dto';
 import { RejectBillboardDto } from './dto/reject-billboard.dto';
 import { UpdateBookingRequestStatusDto } from './dto/update-booking-request-status.dto';
 import { UpdateBillboardMediaDto } from './dto/update-billboard-media.dto';
 import { UpdateBillboardDto } from './dto/update-billboard.dto';
+import { RejectBookingItemDto } from './dto/update-booking-item-status.dto';
+import { UpdateOfferDto } from './dto/update-offer.dto';
+import { UpdateRoadBillboardPackageDto } from './dto/update-road-billboard-package.dto';
 import { UpdateUnavailablePeriodDto } from './dto/update-unavailable-period.dto';
 import { BillboardsRepository } from './billboards.repository';
 
@@ -73,6 +88,40 @@ interface MultipartFastifyRequest extends FastifyRequest {
       parts?: number;
     };
   }) => AsyncIterableIterator<MultipartFile | MultipartValue>;
+}
+
+interface BookingBillboardSnapshot {
+  id: string;
+  companyId: string;
+  price: Prisma.Decimal | number | null;
+  pricingUnit: PricingUnit;
+  currency: string;
+  taxRatePercent: Prisma.Decimal | number;
+}
+
+interface ResolvedBookingItem {
+  input: CreateBookingItemDto;
+  companyId: string;
+  billboardIds: string[];
+  priceSnapshot: number | null;
+  pricingUnit: PricingUnit;
+  currency: string;
+  taxRatePercent: number;
+  taxAmount: number;
+  totalBeforeTax: number;
+  totalAfterTax: number;
+  totalBeforeDiscount?: number;
+  totalAfterDiscount?: number;
+  discountAmount?: number;
+}
+
+interface AvailabilityConflict {
+  requestedItemIndex?: number;
+  billboardId: string;
+  type: 'UNAVAILABLE_PERIOD' | 'APPROVED_BOOKING_ITEM';
+  startDate: Date;
+  endDate: Date;
+  bookingRequestItemId?: string;
 }
 
 @Injectable()
@@ -426,7 +475,520 @@ export class BillboardsService {
     return this.billboardsRepository.listUnavailablePeriods(billboardId);
   }
 
+  async createPartnerRoadPackage(
+    user: AuthenticatedUser,
+    createPackageDto: CreateRoadBillboardPackageDto,
+  ) {
+    const companyId = await this.getPartnerCompanyIdWithSubscription(user);
+    const status = createPackageDto.status ?? BillboardStatus.DRAFT;
+
+    this.ensureDistinctPackageCoordinates(createPackageDto);
+    this.ensureRoadPackageBillboardDefaults(createPackageDto);
+
+    const roadPackage =
+      await this.billboardsRepository.createRoadPackageWithBillboards({
+        packageData: {
+          companyId,
+          title: createPackageDto.title,
+          description: createPackageDto.description,
+          startLatitude: createPackageDto.startLatitude,
+          startLongitude: createPackageDto.startLongitude,
+          endLatitude: createPackageDto.endLatitude,
+          endLongitude: createPackageDto.endLongitude,
+          billboardsCount: createPackageDto.billboardsCount,
+          distanceBetweenBoards: createPackageDto.distanceBetweenBoards,
+          direction: createPackageDto.direction,
+          status,
+        },
+        billboards: this.buildRoadPackageBillboards(
+          companyId,
+          createPackageDto,
+          status,
+        ),
+      });
+
+    if (status === BillboardStatus.PENDING_APPROVAL) {
+      await this.notifyRoadPackageSubmitted(roadPackage.id);
+    }
+
+    return roadPackage;
+  }
+
+  async findPartnerRoadPackages(
+    user: AuthenticatedUser,
+    query: QueryRoadBillboardPackagesDto,
+  ) {
+    const companyId = this.getPartnerCompanyId(user);
+
+    return this.paginateRoadPackages({
+      page: query.page,
+      limit: query.limit,
+      where: this.buildRoadPackageWhere(query, companyId),
+      include: this.billboardsRepository.roadPackageListInclude(),
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async findPartnerRoadPackage(user: AuthenticatedUser, id: string) {
+    const companyId = this.getPartnerCompanyId(user);
+    const roadPackage = await this.billboardsRepository.findCompanyRoadPackage(
+      id,
+      companyId,
+    );
+
+    if (!roadPackage) {
+      throw new NotFoundException('Road billboard package not found');
+    }
+
+    return roadPackage;
+  }
+
+  async updatePartnerRoadPackage(
+    user: AuthenticatedUser,
+    id: string,
+    updatePackageDto: UpdateRoadBillboardPackageDto,
+  ) {
+    const roadPackage = await this.findPartnerRoadPackage(user, id);
+    const directionChanged =
+      updatePackageDto.direction !== undefined &&
+      updatePackageDto.direction !== roadPackage.direction;
+
+    return this.billboardsRepository.updateRoadPackageAndMaybeBillboards(
+      id,
+      {
+        title: updatePackageDto.title,
+        description: updatePackageDto.description,
+        direction: updatePackageDto.direction,
+        distanceBetweenBoards: updatePackageDto.distanceBetweenBoards,
+      },
+      directionChanged ? { direction: updatePackageDto.direction } : undefined,
+    );
+  }
+
+  async submitPartnerRoadPackage(user: AuthenticatedUser, id: string) {
+    const roadPackage = await this.findPartnerRoadPackage(user, id);
+
+    if (roadPackage.status === BillboardStatus.ARCHIVED) {
+      throw new BadRequestException('Archived packages cannot be submitted');
+    }
+
+    if (
+      roadPackage.status !== BillboardStatus.DRAFT &&
+      roadPackage.status !== BillboardStatus.REJECTED
+    ) {
+      throw new BadRequestException(
+        'Only draft or rejected packages can be submitted',
+      );
+    }
+
+    const updatedRoadPackage =
+      await this.billboardsRepository.updateRoadPackageAndMaybeBillboards(
+        id,
+        {
+          status: BillboardStatus.PENDING_APPROVAL,
+          rejectionReason: null,
+          approvedAt: null,
+        },
+        {
+          status: BillboardStatus.PENDING_APPROVAL,
+          rejectionReason: null,
+          approvedAt: null,
+        },
+      );
+
+    await this.notifyRoadPackageSubmitted(id);
+
+    return updatedRoadPackage;
+  }
+
+  async deletePartnerRoadPackage(user: AuthenticatedUser, id: string) {
+    await this.findPartnerRoadPackage(user, id);
+
+    return this.billboardsRepository.softDeleteRoadPackage(id, new Date());
+  }
+
+  findAdminRoadPackages(query: QueryRoadBillboardPackagesDto) {
+    return this.paginateRoadPackages({
+      page: query.page,
+      limit: query.limit,
+      where: this.buildRoadPackageWhere(query),
+      include: this.billboardsRepository.roadPackageListInclude(),
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async findAdminRoadPackage(id: string) {
+    const roadPackage = await this.billboardsRepository.findRoadPackageById(id);
+
+    if (!roadPackage) {
+      throw new NotFoundException('Road billboard package not found');
+    }
+
+    return roadPackage;
+  }
+
+  async approveRoadPackage(id: string) {
+    await this.findAdminRoadPackage(id);
+    const approvedAt = new Date();
+
+    return this.billboardsRepository.updateRoadPackageAndMaybeBillboards(
+      id,
+      {
+        status: BillboardStatus.APPROVED,
+        approvedAt,
+        rejectionReason: null,
+      },
+      {
+        status: BillboardStatus.APPROVED,
+        approvedAt,
+        rejectionReason: null,
+      },
+    );
+  }
+
+  async rejectRoadPackage(id: string, rejectBillboardDto: RejectBillboardDto) {
+    await this.findAdminRoadPackage(id);
+
+    return this.billboardsRepository.updateRoadPackageAndMaybeBillboards(
+      id,
+      {
+        status: BillboardStatus.REJECTED,
+        rejectionReason: rejectBillboardDto.reason,
+        approvedAt: null,
+      },
+      {
+        status: BillboardStatus.REJECTED,
+        rejectionReason: rejectBillboardDto.reason,
+        approvedAt: null,
+      },
+    );
+  }
+
+  async archiveRoadPackage(id: string) {
+    await this.findAdminRoadPackage(id);
+
+    return this.billboardsRepository.updateRoadPackageAndMaybeBillboards(
+      id,
+      {
+        status: BillboardStatus.ARCHIVED,
+      },
+      {
+        status: BillboardStatus.ARCHIVED,
+      },
+    );
+  }
+
+  async createPartnerOffer(
+    user: AuthenticatedUser,
+    createOfferDto: CreateOfferDto,
+  ) {
+    const companyId = await this.getPartnerCompanyIdWithSubscription(user);
+
+    this.ensureValidDateRange(createOfferDto.startsAt, createOfferDto.endsAt);
+
+    const pricing = await this.calculateOfferPricing(
+      companyId,
+      createOfferDto.billboardIds,
+      createOfferDto.discountedTotalPrice,
+    );
+    const status = createOfferDto.submitForApproval
+      ? BillboardStatus.PENDING_APPROVAL
+      : BillboardStatus.DRAFT;
+    const offer = await this.billboardsRepository.createOfferWithItems({
+      offerData: {
+        companyId,
+        title: createOfferDto.title,
+        description: createOfferDto.description,
+        startsAt: createOfferDto.startsAt,
+        endsAt: createOfferDto.endsAt,
+        originalTotalPrice: pricing.originalTotalPrice,
+        discountedTotalPrice: createOfferDto.discountedTotalPrice,
+        currency: createOfferDto.currency ?? 'USD',
+        status,
+      },
+      items: pricing.items,
+    });
+
+    if (status === BillboardStatus.PENDING_APPROVAL) {
+      await this.notifyOfferSubmitted(offer.id);
+    }
+
+    return this.withOfferDiscountAmount(offer);
+  }
+
+  async findPartnerOffers(user: AuthenticatedUser, query: QueryOffersDto) {
+    const companyId = this.getPartnerCompanyId(user);
+    const result = await this.paginateOffers({
+      page: query.page,
+      limit: query.limit,
+      where: this.buildOfferWhere(query, companyId),
+      include: this.billboardsRepository.offerListInclude(),
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return {
+      ...result,
+      data: result.data.map((offer) => this.withOfferDiscountAmount(offer)),
+    };
+  }
+
+  async findPartnerOffer(user: AuthenticatedUser, id: string) {
+    const companyId = this.getPartnerCompanyId(user);
+    const offer = await this.billboardsRepository.findCompanyOffer(
+      id,
+      companyId,
+    );
+
+    if (!offer) {
+      throw new NotFoundException('Offer not found');
+    }
+
+    return this.withOfferDiscountAmount(offer);
+  }
+
+  async updatePartnerOffer(
+    user: AuthenticatedUser,
+    id: string,
+    updateOfferDto: UpdateOfferDto,
+  ) {
+    const companyId = this.getPartnerCompanyId(user);
+    const offer = await this.billboardsRepository.findCompanyOffer(
+      id,
+      companyId,
+    );
+
+    if (!offer) {
+      throw new NotFoundException('Offer not found');
+    }
+
+    if (offer.status === BillboardStatus.ARCHIVED) {
+      throw new BadRequestException('Archived offers cannot be edited');
+    }
+
+    const startsAt = updateOfferDto.startsAt ?? offer.startsAt;
+    const endsAt = updateOfferDto.endsAt ?? offer.endsAt;
+    this.ensureValidDateRange(startsAt, endsAt);
+
+    const pricing = updateOfferDto.billboardIds
+      ? await this.calculateOfferPricing(
+          companyId,
+          updateOfferDto.billboardIds,
+          updateOfferDto.discountedTotalPrice ??
+            Number(offer.discountedTotalPrice),
+        )
+      : {
+          originalTotalPrice: Number(offer.originalTotalPrice),
+          items: undefined,
+        };
+    const discountedTotalPrice =
+      updateOfferDto.discountedTotalPrice ?? Number(offer.discountedTotalPrice);
+
+    this.ensureOfferDiscountIsValid(
+      pricing.originalTotalPrice,
+      discountedTotalPrice,
+    );
+
+    const shouldResubmit = offer.status === BillboardStatus.APPROVED;
+    const updatedOffer = await this.billboardsRepository.updateOffer(
+      id,
+      {
+        title: updateOfferDto.title,
+        description: updateOfferDto.description,
+        startsAt: updateOfferDto.startsAt,
+        endsAt: updateOfferDto.endsAt,
+        originalTotalPrice: pricing.originalTotalPrice,
+        discountedTotalPrice,
+        currency: updateOfferDto.currency,
+        ...(shouldResubmit
+          ? {
+              status: BillboardStatus.PENDING_APPROVAL,
+              approvedAt: null,
+              rejectionReason: null,
+            }
+          : {}),
+      },
+      pricing.items,
+    );
+
+    if (shouldResubmit) {
+      await this.notifyOfferSubmitted(id);
+    }
+
+    return this.withOfferDiscountAmount(updatedOffer);
+  }
+
+  async submitPartnerOffer(user: AuthenticatedUser, id: string) {
+    const companyId = this.getPartnerCompanyId(user);
+    const offer = await this.billboardsRepository.findCompanyOffer(
+      id,
+      companyId,
+    );
+
+    if (!offer) {
+      throw new NotFoundException('Offer not found');
+    }
+
+    if (offer.status === BillboardStatus.ARCHIVED) {
+      throw new BadRequestException('Archived offers cannot be submitted');
+    }
+
+    if (
+      offer.status !== BillboardStatus.DRAFT &&
+      offer.status !== BillboardStatus.REJECTED
+    ) {
+      throw new BadRequestException('Only draft or rejected offers can be submitted');
+    }
+
+    const updatedOffer = await this.billboardsRepository.updateOffer(id, {
+      status: BillboardStatus.PENDING_APPROVAL,
+      rejectionReason: null,
+      approvedAt: null,
+    });
+
+    await this.notifyOfferSubmitted(id);
+
+    return this.withOfferDiscountAmount(updatedOffer);
+  }
+
+  async deletePartnerOffer(user: AuthenticatedUser, id: string) {
+    await this.findPartnerOffer(user, id);
+
+    const deletedOffer = await this.billboardsRepository.softDeleteOffer(
+      id,
+      new Date(),
+    );
+
+    return this.withOfferDiscountAmount(deletedOffer);
+  }
+
+  async findAdminOffers(query: QueryOffersDto) {
+    const result = await this.paginateOffers({
+      page: query.page,
+      limit: query.limit,
+      where: this.buildOfferWhere(query),
+      include: this.billboardsRepository.offerListInclude(),
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return {
+      ...result,
+      data: result.data.map((offer) => this.withOfferDiscountAmount(offer)),
+    };
+  }
+
+  async findAdminOffer(id: string) {
+    const offer = await this.billboardsRepository.findOfferById(id);
+
+    if (!offer) {
+      throw new NotFoundException('Offer not found');
+    }
+
+    return this.withOfferDiscountAmount(offer);
+  }
+
+  async approveOffer(id: string) {
+    await this.findAdminOffer(id);
+
+    const offer = await this.billboardsRepository.updateOffer(id, {
+      status: BillboardStatus.APPROVED,
+      approvedAt: new Date(),
+      rejectionReason: null,
+    });
+
+    return this.withOfferDiscountAmount(offer);
+  }
+
+  async rejectOffer(id: string, rejectBillboardDto: RejectBillboardDto) {
+    await this.findAdminOffer(id);
+
+    const offer = await this.billboardsRepository.updateOffer(id, {
+      status: BillboardStatus.REJECTED,
+      rejectionReason: rejectBillboardDto.reason,
+      approvedAt: null,
+    });
+
+    return this.withOfferDiscountAmount(offer);
+  }
+
+  async archiveOffer(id: string) {
+    await this.findAdminOffer(id);
+
+    const offer = await this.billboardsRepository.updateOffer(id, {
+      status: BillboardStatus.ARCHIVED,
+    });
+
+    return this.withOfferDiscountAmount(offer);
+  }
+
+  async findPublicOffers(query: QueryOffersDto) {
+    const result = await this.paginateOffers({
+      page: query.page,
+      limit: query.limit,
+      where: this.buildPublicOfferWhere(query),
+      include: this.billboardsRepository.publicOfferListInclude(),
+      orderBy: { approvedAt: 'desc' },
+    });
+
+    return {
+      ...result,
+      data: result.data.map((offer) => this.toPublicOffer(offer)),
+    };
+  }
+
+  async findPublicOffer(id: string) {
+    const offer = await this.billboardsRepository.findPublicOfferById(
+      id,
+      this.buildPublicOfferWhere(),
+    );
+
+    if (!offer) {
+      throw new NotFoundException('Offer not found');
+    }
+
+    return this.toPublicOffer(offer);
+  }
+
   async findPublicBillboards(query: PublicQueryBillboardsDto) {
+    if (query.availableFrom || query.availableTo) {
+      if (!query.availableFrom || !query.availableTo) {
+        throw new BadRequestException(
+          'availableFrom and availableTo must be provided together',
+        );
+      }
+
+      this.ensureValidDateRange(query.availableFrom, query.availableTo);
+
+      const billboards = await this.billboardsRepository.findPublicBillboards({
+        where: this.buildPublicWhere(query),
+        select: this.billboardsRepository.publicSelect(),
+        orderBy: { approvedAt: 'desc' },
+      });
+      const availableIds = await this.filterAvailableBillboardIds(
+        billboards.map((billboard) => billboard.id),
+        query.availableFrom,
+        query.availableTo,
+      );
+      const availableSet = new Set(availableIds);
+      const filtered = billboards.filter((billboard) =>
+        availableSet.has(billboard.id),
+      );
+      const start = (query.page - 1) * query.limit;
+      const data = filtered.slice(start, start + query.limit);
+      const totalPages = Math.ceil(filtered.length / query.limit);
+
+      return {
+        data: data.map((billboard) => this.toPublicBillboard(billboard)),
+        meta: {
+          page: query.page,
+          limit: query.limit,
+          total: filtered.length,
+          totalPages,
+          hasNextPage: query.page < totalPages,
+          hasPreviousPage: query.page > 1,
+        },
+      };
+    }
+
     const result = await this.billboardsRepository.paginate({
       page: query.page,
       limit: query.limit,
@@ -529,8 +1091,8 @@ export class BillboardsService {
         startDate,
         endDate,
       ),
-      this.billboardsRepository.findOverlappingApprovedBookings(
-        billboardId,
+      this.billboardsRepository.findBulkOverlappingApprovedBookingItems(
+        [billboardId],
         startDate,
         endDate,
         excludeBookingRequestId,
@@ -543,7 +1105,7 @@ export class BillboardsService {
         endDate: period.endDate,
       })),
       ...approvedBookings.map((booking) => ({
-        type: 'APPROVED_BOOKING' as const,
+        type: 'APPROVED_BOOKING_ITEM' as const,
         startDate: booking.startDate,
         endDate: booking.endDate,
       })),
@@ -558,62 +1120,81 @@ export class BillboardsService {
     };
   }
 
+  async createCustomerMultiBookingRequest(
+    user: AuthenticatedUser,
+    createBookingDto: CreateMultiBookingRequestDto,
+  ) {
+    this.ensureCustomer(user);
+    createBookingDto.items.forEach((item) =>
+      this.ensureValidDateRange(item.startDate, item.endDate),
+    );
+
+    const resolvedItems = await this.resolveBookingItems(createBookingDto.items);
+    const conflicts = await this.findAvailabilityConflictsForResolvedItems(
+      resolvedItems,
+    );
+
+    if (conflicts.length > 0) {
+      throw new BadRequestException({
+        message: 'One or more booking items are not available',
+        conflicts,
+      });
+    }
+
+    const totals = this.calculateBookingTotals(resolvedItems);
+    const legacyFirstItem = resolvedItems[0];
+    const bookingRequest =
+      await this.billboardsRepository.createBookingRequestWithItems(
+        {
+          billboardId:
+            legacyFirstItem.input.itemType === BookingItemType.BILLBOARD
+              ? legacyFirstItem.input.billboardId
+              : null,
+          customerId: user.id,
+          startDate: this.minDate(createBookingDto.items.map((item) => item.startDate)),
+          endDate: this.maxDate(createBookingDto.items.map((item) => item.endDate)),
+          customerFullName: user.fullName,
+          customerEmail: user.email,
+          customerPhone: user.phone ?? '',
+          customerCompany: createBookingDto.customerCompany,
+          customerCompanyScope: createBookingDto.customerCompanyScope,
+          customerSector: createBookingDto.customerSector,
+          customerNotes: createBookingDto.customerNotes,
+          estimatedPrice: totals.totalAfterTax,
+          subtotalBeforeTax: totals.subtotalBeforeTax,
+          totalTaxAmount: totals.totalTaxAmount,
+          totalAfterTax: totals.totalAfterTax,
+          totalBeforeDiscount: totals.totalBeforeDiscount,
+          totalAfterDiscount: totals.totalAfterDiscount,
+          pricingUnit: legacyFirstItem.pricingUnit,
+          currency: legacyFirstItem.currency,
+          status: BookingRequestStatus.PENDING_REVIEW,
+        },
+        resolvedItems.map((item) => this.toBookingRequestItemCreateInput(item)),
+      );
+
+    await this.notifyBookingCreated(bookingRequest.id, resolvedItems);
+
+    return this.withBookingBillboardMainImage(bookingRequest);
+  }
+
   async createCustomerBookingRequest(
     user: AuthenticatedUser,
     billboardId: string,
     createBookingDto: CreateBookingRequestDto,
   ) {
-    this.ensureCustomer(user);
-    const billboard = await this.billboardsRepository.findPublicById(
-      billboardId,
-      this.buildPublicWhere(),
-    );
-
-    if (!billboard) {
-      throw new NotFoundException('Billboard not found');
-    }
-
-    const availability = await this.checkBillboardAvailability(
-      billboardId,
-      createBookingDto.startDate,
-      createBookingDto.endDate,
-    );
-
-    if (!availability.available) {
-      throw new BadRequestException({
-        message: 'Billboard is not available for the selected date range',
-        conflicts: availability.conflicts,
-      });
-    }
-
-    const bookingRequest = await this.billboardsRepository.createBookingRequest(
-      {
-        billboardId,
-        customerId: user.id,
-        startDate: createBookingDto.startDate,
-        endDate: createBookingDto.endDate,
-        customerFullName: user.fullName,
-        customerEmail: user.email,
-        customerPhone: user.phone ?? '',
-        customerCompany: createBookingDto.customerCompany,
-        customerNotes: createBookingDto.customerNotes,
-        estimatedPrice: billboard.price as Prisma.Decimal | null,
-        pricingUnit: billboard.pricingUnit,
-        currency: billboard.currency,
-        status: BookingRequestStatus.PENDING,
-      },
-    );
-
-    await this.notificationsService.create({
-      role: UserRole.SUPER_ADMIN,
-      type: NotificationType.BOOKING_REQUEST_CREATED,
-      title: 'New booking request',
-      message: 'A customer created a new booking request.',
-      entityType: 'BOOKING_REQUEST',
-      entityId: bookingRequest.id,
+    return this.createCustomerMultiBookingRequest(user, {
+      items: [
+        {
+          itemType: BookingItemType.BILLBOARD,
+          billboardId,
+          startDate: createBookingDto.startDate,
+          endDate: createBookingDto.endDate,
+        },
+      ],
+      customerCompany: createBookingDto.customerCompany,
+      customerNotes: createBookingDto.customerNotes,
     });
-
-    return this.withBookingBillboardMainImage(bookingRequest);
   }
 
   async findCustomerBookingRequests(
@@ -629,7 +1210,7 @@ export class BillboardsService {
         customerId: user.id,
         ...(query.status ? { status: query.status } : {}),
       },
-      include: this.billboardsRepository.customerBookingInclude(),
+      include: this.billboardsRepository.bookingRequestDetailInclude(),
       orderBy: { createdAt: 'desc' },
     });
 
@@ -663,18 +1244,28 @@ export class BillboardsService {
     }
 
     if (
-      bookingRequest.status !== BookingRequestStatus.PENDING &&
-      bookingRequest.status !== BookingRequestStatus.CONTACTED
+      bookingRequest.status === BookingRequestStatus.APPROVED
     ) {
       throw new BadRequestException(
-        'Only pending or contacted booking requests can be cancelled',
+        'Fully approved booking requests cannot be cancelled',
       );
     }
 
+    await this.billboardsRepository.updateBookingRequest(id, {
+      items: {
+        updateMany: {
+          where: { status: BookingRequestItemStatus.PENDING },
+          data: { status: BookingRequestItemStatus.CANCELLED },
+        },
+      },
+    });
+    await this.syncBookingRequestStatus(id);
     const updatedBookingRequest =
-      await this.billboardsRepository.updateBookingRequest(id, {
-        status: BookingRequestStatus.CANCELLED,
-      });
+      await this.billboardsRepository.findCustomerBookingRequest(id, user.id);
+
+    if (!updatedBookingRequest) {
+      throw new NotFoundException('Booking request not found');
+    }
 
     return this.withBookingBillboardMainImage(updatedBookingRequest);
   }
@@ -684,7 +1275,7 @@ export class BillboardsService {
       page: query.page,
       limit: query.limit,
       where: this.buildBookingWhere(query),
-      include: this.billboardsRepository.adminBookingInclude(),
+      include: this.billboardsRepository.bookingRequestDetailInclude(),
       orderBy: { createdAt: 'desc' },
     });
 
@@ -718,7 +1309,10 @@ export class BillboardsService {
       throw new NotFoundException('Booking request not found');
     }
 
-    if (updateStatusDto.status === BookingRequestStatus.APPROVED) {
+    if (
+      updateStatusDto.status === BookingRequestStatus.APPROVED &&
+      bookingRequest.billboardId
+    ) {
       const availability = await this.checkBillboardAvailability(
         bookingRequest.billboardId,
         bookingRequest.startDate,
@@ -752,6 +1346,99 @@ export class BillboardsService {
     });
 
     return this.withBookingBillboardMainImage(updatedBookingRequest);
+  }
+
+  async findPartnerBookingItems(
+    user: AuthenticatedUser,
+    query: QueryBookingItemsDto,
+  ) {
+    const companyId = this.getPartnerCompanyId(user);
+
+    return this.paginateBookingItems({
+      page: query.page,
+      limit: query.limit,
+      where: {
+        companyId,
+        ...(query.status ? { status: query.status } : {}),
+        ...(query.bookingRequestId
+          ? { bookingRequestId: query.bookingRequestId }
+          : {}),
+      },
+      include: this.billboardsRepository.partnerBookingItemInclude(),
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async findPartnerBookingItem(user: AuthenticatedUser, id: string) {
+    const companyId = this.getPartnerCompanyId(user);
+    const item = await this.billboardsRepository.findPartnerBookingItem(
+      id,
+      companyId,
+    );
+
+    if (!item) {
+      throw new NotFoundException('Booking item not found');
+    }
+
+    return this.withBookingItemMainImages(item);
+  }
+
+  async approvePartnerBookingItem(user: AuthenticatedUser, id: string) {
+    const item = await this.findPartnerBookingItem(user, id);
+
+    if (item.status !== BookingRequestItemStatus.PENDING) {
+      throw new BadRequestException('Only pending booking items can be approved');
+    }
+
+    const resolvedItem = await this.resolveExistingBookingItemForAvailability(
+      item,
+    );
+    const conflicts = await this.findAvailabilityConflictsForResolvedItems(
+      [resolvedItem],
+      id,
+    );
+
+    if (conflicts.length > 0) {
+      throw new BadRequestException({
+        message: 'Booking item is not available',
+        conflicts,
+      });
+    }
+
+    const updatedItem = await this.billboardsRepository.updateBookingItem(id, {
+      status: BookingRequestItemStatus.APPROVED,
+      approvedAt: new Date(),
+      rejectedAt: null,
+    });
+
+    await this.syncBookingRequestStatus(item.bookingRequestId);
+    await this.notifyBookingItemStatusChanged(item.bookingRequestId, id);
+
+    return this.withBookingItemMainImages(updatedItem);
+  }
+
+  async rejectPartnerBookingItem(
+    user: AuthenticatedUser,
+    id: string,
+    rejectDto: RejectBookingItemDto,
+  ) {
+    const item = await this.findPartnerBookingItem(user, id);
+
+    if (item.status !== BookingRequestItemStatus.PENDING) {
+      throw new BadRequestException('Only pending booking items can be rejected');
+    }
+
+    const updatedItem = await this.billboardsRepository.updateBookingItem(id, {
+      status: BookingRequestItemStatus.REJECTED,
+      partnerNotes: rejectDto.partnerNotes,
+      rejectedAt: new Date(),
+      approvedAt: null,
+    });
+
+    await this.syncBookingRequestStatus(item.bookingRequestId);
+    await this.notifyBookingItemStatusChanged(item.bookingRequestId, id);
+
+    return this.withBookingItemMainImages(updatedItem);
   }
 
   async findPartnerBookingRequests(
@@ -919,6 +1606,292 @@ export class BillboardsService {
     };
   }
 
+  private buildRoadPackageWhere(
+    query: QueryRoadBillboardPackagesDto,
+    companyId?: string,
+  ): Prisma.RoadBillboardPackageWhereInput {
+    return {
+      deletedAt: null,
+      ...(companyId ? { companyId } : {}),
+      ...(!companyId && query.companyId ? { companyId: query.companyId } : {}),
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.direction ? { direction: query.direction } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { title: { contains: query.search, mode: 'insensitive' } },
+              { description: { contains: query.search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+  }
+
+  private buildOfferWhere(
+    query: QueryOffersDto,
+    companyId?: string,
+  ): Prisma.OfferWhereInput {
+    const now = new Date();
+
+    return {
+      deletedAt: null,
+      ...(companyId ? { companyId } : {}),
+      ...(!companyId && query.companyId ? { companyId: query.companyId } : {}),
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.activeOnly
+        ? {
+            startsAt: { lte: now },
+            endsAt: { gte: now },
+          }
+        : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { title: { contains: query.search, mode: 'insensitive' } },
+              { description: { contains: query.search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+  }
+
+  private buildPublicOfferWhere(
+    query: QueryOffersDto = new QueryOffersDto(),
+  ): Prisma.OfferWhereInput {
+    const now = new Date();
+
+    return {
+      status: BillboardStatus.APPROVED,
+      deletedAt: null,
+      startsAt: { lte: now },
+      endsAt: { gte: now },
+      company: {
+        status: 'ACTIVE',
+        deletedAt: null,
+        serviceSubscriptions: {
+          some: {
+            serviceType: ServiceType.BILLBOARDS,
+            status: ServiceSubscriptionStatus.ACTIVE,
+          },
+        },
+      },
+      ...(query.search
+        ? {
+            OR: [
+              { title: { contains: query.search, mode: 'insensitive' } },
+              { description: { contains: query.search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+  }
+
+  private async paginateOffers(args: {
+    page: number;
+    limit: number;
+    where: Prisma.OfferWhereInput;
+    include?: Prisma.OfferInclude;
+    orderBy?: Prisma.OfferOrderByWithRelationInput;
+  }) {
+    const skip = (args.page - 1) * args.limit;
+    const [data, total] = await Promise.all([
+      this.billboardsRepository.findOffers({
+        where: args.where,
+        include: args.include,
+        orderBy: args.orderBy,
+        skip,
+        take: args.limit,
+      }),
+      this.billboardsRepository.countOffers(args.where),
+    ]);
+    const totalPages = Math.ceil(total / args.limit);
+
+    return {
+      data,
+      meta: {
+        page: args.page,
+        limit: args.limit,
+        total,
+        totalPages,
+        hasNextPage: args.page < totalPages,
+        hasPreviousPage: args.page > 1,
+      },
+    };
+  }
+
+  private async calculateOfferPricing(
+    companyId: string,
+    billboardIds: string[],
+    discountedTotalPrice: number,
+  ) {
+    const billboards = await this.billboardsRepository.findCompanyBillboardsForOffer(
+      companyId,
+      billboardIds,
+    );
+
+    if (billboards.length !== billboardIds.length) {
+      throw new BadRequestException(
+        'All offer billboards must belong to your company and not be archived',
+      );
+    }
+
+    const items = billboards.map((billboard) => {
+      if (billboard.price === null) {
+        throw new BadRequestException(
+          'All offer billboards must have a price',
+        );
+      }
+
+      return {
+        billboardId: billboard.id,
+        priceSnapshot: Number(billboard.price),
+      };
+    });
+    const originalTotalPrice = items.reduce(
+      (total, item) => total + Number(item.priceSnapshot),
+      0,
+    );
+
+    this.ensureOfferDiscountIsValid(originalTotalPrice, discountedTotalPrice);
+
+    return {
+      originalTotalPrice,
+      items,
+    };
+  }
+
+  private ensureOfferDiscountIsValid(
+    originalTotalPrice: number,
+    discountedTotalPrice: number,
+  ): void {
+    if (discountedTotalPrice >= originalTotalPrice) {
+      throw new BadRequestException(
+        'discountedTotalPrice must be less than originalTotalPrice',
+      );
+    }
+  }
+
+  private async paginateRoadPackages(args: {
+    page: number;
+    limit: number;
+    where: Prisma.RoadBillboardPackageWhereInput;
+    include?: Prisma.RoadBillboardPackageInclude;
+    orderBy?: Prisma.RoadBillboardPackageOrderByWithRelationInput;
+  }) {
+    const skip = (args.page - 1) * args.limit;
+    const [data, total] = await Promise.all([
+      this.billboardsRepository.findRoadPackages({
+        where: args.where,
+        include: args.include,
+        orderBy: args.orderBy,
+        skip,
+        take: args.limit,
+      }),
+      this.billboardsRepository.countRoadPackages(args.where),
+    ]);
+    const totalPages = Math.ceil(total / args.limit);
+
+    return {
+      data,
+      meta: {
+        page: args.page,
+        limit: args.limit,
+        total,
+        totalPages,
+        hasNextPage: args.page < totalPages,
+        hasPreviousPage: args.page > 1,
+      },
+    };
+  }
+
+  private buildRoadPackageBillboards(
+    companyId: string,
+    createPackageDto: CreateRoadBillboardPackageDto,
+    status: BillboardStatus,
+  ): Prisma.BillboardUncheckedCreateInput[] {
+    const defaults = createPackageDto.billboardDefaults;
+
+    return Array.from({ length: createPackageDto.billboardsCount }, (_, i) => {
+      const boardNumber = i + 1;
+      const ratio =
+        createPackageDto.billboardsCount === 1
+          ? 0
+          : i / (createPackageDto.billboardsCount - 1);
+
+      return {
+        companyId,
+        title: `${createPackageDto.title} - Board ${boardNumber}`,
+        country: defaults.country,
+        province: defaults.province,
+        city: defaults.city,
+        latitude: this.interpolateCoordinate(
+          createPackageDto.startLatitude,
+          createPackageDto.endLatitude,
+          ratio,
+        ),
+        longitude: this.interpolateCoordinate(
+          createPackageDto.startLongitude,
+          createPackageDto.endLongitude,
+          ratio,
+        ),
+        width: defaults.width,
+        height: defaults.height,
+        type: defaults.type,
+        direction: createPackageDto.direction,
+        printedSubtype: defaults.printedSubtype,
+        hasLighting: defaults.hasLighting ?? false,
+        lightingPrice: defaults.lightingPrice,
+        price: defaults.price,
+        pricingUnit: defaults.pricingUnit ?? 'MONTH',
+        currency: defaults.currency ?? 'USD',
+        taxRatePercent: defaults.taxRatePercent ?? 0,
+        status,
+        isPackageOnly: true,
+      };
+    });
+  }
+
+  private interpolateCoordinate(start: number, end: number, ratio: number) {
+    return start + (end - start) * ratio;
+  }
+
+  private ensureDistinctPackageCoordinates(
+    createPackageDto: CreateRoadBillboardPackageDto,
+  ): void {
+    if (
+      createPackageDto.startLatitude === createPackageDto.endLatitude &&
+      createPackageDto.startLongitude === createPackageDto.endLongitude
+    ) {
+      throw new BadRequestException(
+        'Package start and end coordinates cannot be identical',
+      );
+    }
+  }
+
+  private ensureRoadPackageBillboardDefaults(
+    createPackageDto: CreateRoadBillboardPackageDto,
+  ): void {
+    const defaults = createPackageDto.billboardDefaults;
+
+    if (
+      defaults.printedSubtype !== undefined &&
+      defaults.type !== BillboardType.PRINTED
+    ) {
+      throw new BadRequestException(
+        'printedSubtype is only valid for PRINTED billboards',
+      );
+    }
+
+    if (
+      defaults.pricingUnit === PricingUnit.HOUR &&
+      defaults.type !== BillboardType.CAR_AD
+    ) {
+      throw new BadRequestException(
+        'pricingUnit HOUR is only valid for CAR_AD billboards',
+      );
+    }
+  }
+
   private async paginateBookingRequests(args: {
     page: number;
     limit: number;
@@ -954,6 +1927,405 @@ export class BillboardsService {
     };
   }
 
+  private async paginateBookingItems(args: {
+    page: number;
+    limit: number;
+    where: Prisma.BookingRequestItemWhereInput;
+    include?: Prisma.BookingRequestItemInclude;
+    orderBy?: Prisma.BookingRequestItemOrderByWithRelationInput;
+  }) {
+    const skip = (args.page - 1) * args.limit;
+    const [data, total] = await Promise.all([
+      this.billboardsRepository.findBookingItems({
+        where: args.where,
+        include: args.include,
+        orderBy: args.orderBy,
+        skip,
+        take: args.limit,
+      }),
+      this.billboardsRepository.countBookingItems(args.where),
+    ]);
+    const totalPages = Math.ceil(total / args.limit);
+
+    return {
+      data: data.map((item) => this.withBookingItemMainImages(item)),
+      meta: {
+        page: args.page,
+        limit: args.limit,
+        total,
+        totalPages,
+        hasNextPage: args.page < totalPages,
+        hasPreviousPage: args.page > 1,
+      },
+    };
+  }
+
+  private async resolveBookingItems(
+    items: CreateBookingItemDto[],
+  ): Promise<ResolvedBookingItem[]> {
+    const billboardIds = items
+      .filter((item) => item.itemType === BookingItemType.BILLBOARD)
+      .map((item) => item.billboardId)
+      .filter((id): id is string => Boolean(id));
+    const roadPackageIds = items
+      .filter((item) => item.itemType === BookingItemType.ROAD_PACKAGE)
+      .map((item) => item.roadPackageId)
+      .filter((id): id is string => Boolean(id));
+    const offerIds = items
+      .filter((item) => item.itemType === BookingItemType.OFFER)
+      .map((item) => item.offerId)
+      .filter((id): id is string => Boolean(id));
+    const now = new Date();
+    const [billboards, roadPackages, offers] = await Promise.all([
+      this.billboardsRepository.findPublicBillboardsForBooking(billboardIds),
+      this.billboardsRepository.findPublicRoadPackagesForBooking(roadPackageIds),
+      this.billboardsRepository.findPublicOffersForBooking(offerIds, now),
+    ]);
+    const billboardMap = new Map(billboards.map((billboard) => [billboard.id, billboard]));
+    const packageMap = new Map(roadPackages.map((roadPackage) => [roadPackage.id, roadPackage]));
+    const offerMap = new Map(offers.map((offer) => [offer.id, offer]));
+
+    return items.map((item) => {
+      if (item.itemType === BookingItemType.BILLBOARD) {
+        if (!item.billboardId) {
+          throw new BadRequestException('billboardId is required for BILLBOARD items');
+        }
+
+        const billboard = billboardMap.get(item.billboardId);
+
+        if (!billboard) {
+          throw new NotFoundException('Billboard is not available for booking');
+        }
+
+        return this.resolveBillboardBookingItem(item, billboard);
+      }
+
+      if (item.itemType === BookingItemType.ROAD_PACKAGE) {
+        if (!item.roadPackageId) {
+          throw new BadRequestException(
+            'roadPackageId is required for ROAD_PACKAGE items',
+          );
+        }
+
+        const roadPackage = packageMap.get(item.roadPackageId);
+
+        if (!roadPackage || roadPackage.billboards.length === 0) {
+          throw new NotFoundException(
+            'Road package is not available for booking',
+          );
+        }
+
+        return this.resolveGroupedBookingItem(
+          item,
+          roadPackage.companyId,
+          roadPackage.billboards,
+        );
+      }
+
+      if (!item.offerId) {
+        throw new BadRequestException('offerId is required for OFFER items');
+      }
+
+      const offer = offerMap.get(item.offerId);
+
+      if (!offer || offer.items.length === 0) {
+        throw new NotFoundException('Offer is not available for booking');
+      }
+
+      return this.resolveOfferBookingItem(item, offer);
+    });
+  }
+
+  private resolveBillboardBookingItem(
+    item: CreateBookingItemDto,
+    billboard: BookingBillboardSnapshot,
+  ): ResolvedBookingItem {
+    const price = this.requireBillboardPrice(billboard);
+    const taxRatePercent = Number(billboard.taxRatePercent);
+    const taxAmount = this.calculateTax(price, taxRatePercent);
+
+    return {
+      input: item,
+      companyId: billboard.companyId,
+      billboardIds: [billboard.id],
+      priceSnapshot: price,
+      pricingUnit: billboard.pricingUnit,
+      currency: billboard.currency,
+      taxRatePercent,
+      taxAmount,
+      totalBeforeTax: price,
+      totalAfterTax: price + taxAmount,
+    };
+  }
+
+  private resolveGroupedBookingItem(
+    item: CreateBookingItemDto,
+    companyId: string,
+    billboards: BookingBillboardSnapshot[],
+  ): ResolvedBookingItem {
+    const firstBillboard = billboards[0];
+    let totalBeforeTax = 0;
+    let taxAmount = 0;
+
+    for (const billboard of billboards) {
+      const price = this.requireBillboardPrice(billboard);
+      totalBeforeTax += price;
+      taxAmount += this.calculateTax(price, Number(billboard.taxRatePercent));
+    }
+
+    return {
+      input: item,
+      companyId,
+      billboardIds: billboards.map((billboard) => billboard.id),
+      priceSnapshot: totalBeforeTax,
+      pricingUnit: firstBillboard.pricingUnit,
+      currency: firstBillboard.currency,
+      taxRatePercent: 0,
+      taxAmount,
+      totalBeforeTax,
+      totalAfterTax: totalBeforeTax + taxAmount,
+    };
+  }
+
+  private resolveOfferBookingItem(
+    item: CreateBookingItemDto,
+    offer: {
+      companyId: string;
+      originalTotalPrice: Prisma.Decimal;
+      discountedTotalPrice: Prisma.Decimal;
+      currency: string;
+      items: { billboard: BookingBillboardSnapshot; priceSnapshot: Prisma.Decimal | null }[];
+    },
+  ): ResolvedBookingItem {
+    const originalTotalPrice = Number(offer.originalTotalPrice);
+    const discountedTotalPrice = Number(offer.discountedTotalPrice);
+    const discountRatio =
+      originalTotalPrice > 0 ? discountedTotalPrice / originalTotalPrice : 0;
+    let taxAmount = 0;
+
+    for (const item of offer.items) {
+      const price = this.requireBillboardPrice(item.billboard);
+      taxAmount += this.calculateTax(
+        price * discountRatio,
+        Number(item.billboard.taxRatePercent),
+      );
+    }
+
+    return {
+      input: item,
+      companyId: offer.companyId,
+      billboardIds: offer.items.map((offerItem) => offerItem.billboard.id),
+      priceSnapshot: discountedTotalPrice,
+      pricingUnit: PricingUnit.CUSTOM,
+      currency: offer.currency,
+      taxRatePercent: 0,
+      taxAmount,
+      totalBeforeTax: discountedTotalPrice,
+      totalAfterTax: discountedTotalPrice + taxAmount,
+      totalBeforeDiscount: originalTotalPrice,
+      totalAfterDiscount: discountedTotalPrice,
+      discountAmount: originalTotalPrice - discountedTotalPrice,
+    };
+  }
+
+  private async findAvailabilityConflictsForResolvedItems(
+    items: ResolvedBookingItem[],
+    excludeBookingItemId?: string,
+  ): Promise<AvailabilityConflict[]> {
+    const billboardIds = Array.from(
+      new Set(items.flatMap((item) => item.billboardIds)),
+    );
+
+    if (billboardIds.length === 0) {
+      return [];
+    }
+
+    const minStartDate = this.minDate(items.map((item) => item.input.startDate));
+    const maxEndDate = this.maxDate(items.map((item) => item.input.endDate));
+    const [unavailablePeriods, approvedItems] = await Promise.all([
+      this.billboardsRepository.findBulkOverlappingUnavailablePeriods(
+        billboardIds,
+        minStartDate,
+        maxEndDate,
+      ),
+      this.billboardsRepository.findBulkOverlappingApprovedBookingItems(
+        billboardIds,
+        minStartDate,
+        maxEndDate,
+        excludeBookingItemId,
+      ),
+    ]);
+    const unavailableByBillboard = new Map<string, typeof unavailablePeriods>();
+
+    for (const period of unavailablePeriods) {
+      const periods = unavailableByBillboard.get(period.billboardId) ?? [];
+      periods.push(period);
+      unavailableByBillboard.set(period.billboardId, periods);
+    }
+
+    const approvedConflicts = approvedItems.flatMap((bookingItem) => {
+      const occupiedBillboardIds = new Set<string>();
+
+      if (bookingItem.billboardId) {
+        occupiedBillboardIds.add(bookingItem.billboardId);
+      }
+
+      bookingItem.roadPackage?.billboards.forEach((billboard) =>
+        occupiedBillboardIds.add(billboard.id),
+      );
+      bookingItem.offer?.items.forEach((offerItem) =>
+        occupiedBillboardIds.add(offerItem.billboardId),
+      );
+
+      return Array.from(occupiedBillboardIds).map((billboardId) => ({
+        billboardId,
+        bookingItem,
+      }));
+    });
+    const conflicts: AvailabilityConflict[] = [];
+
+    items.forEach((item, requestedItemIndex) => {
+      for (const billboardId of item.billboardIds) {
+        for (const period of unavailableByBillboard.get(billboardId) ?? []) {
+          if (this.rangesOverlap(item.input.startDate, item.input.endDate, period.startDate, period.endDate)) {
+            conflicts.push({
+              requestedItemIndex,
+              billboardId,
+              type: 'UNAVAILABLE_PERIOD',
+              startDate: period.startDate,
+              endDate: period.endDate,
+            });
+          }
+        }
+
+        for (const conflict of approvedConflicts) {
+          if (
+            conflict.billboardId === billboardId &&
+            this.rangesOverlap(
+              item.input.startDate,
+              item.input.endDate,
+              conflict.bookingItem.startDate,
+              conflict.bookingItem.endDate,
+            )
+          ) {
+            conflicts.push({
+              requestedItemIndex,
+              billboardId,
+              type: 'APPROVED_BOOKING_ITEM',
+              startDate: conflict.bookingItem.startDate,
+              endDate: conflict.bookingItem.endDate,
+              bookingRequestItemId: conflict.bookingItem.id,
+            });
+          }
+        }
+      }
+    });
+
+    return conflicts;
+  }
+
+  private async filterAvailableBillboardIds(
+    billboardIds: string[],
+    startDate: Date,
+    endDate: Date,
+  ) {
+    if (billboardIds.length === 0) {
+      return [];
+    }
+
+    const [unavailablePeriods, approvedItems] = await Promise.all([
+      this.billboardsRepository.findBulkOverlappingUnavailablePeriods(
+        billboardIds,
+        startDate,
+        endDate,
+      ),
+      this.billboardsRepository.findBulkOverlappingApprovedBookingItems(
+        billboardIds,
+        startDate,
+        endDate,
+      ),
+    ]);
+    const unavailableIds = new Set(
+      unavailablePeriods.map((period) => period.billboardId),
+    );
+
+    for (const item of approvedItems) {
+      if (item.billboardId) {
+        unavailableIds.add(item.billboardId);
+      }
+
+      item.roadPackage?.billboards.forEach((billboard) =>
+        unavailableIds.add(billboard.id),
+      );
+      item.offer?.items.forEach((offerItem) =>
+        unavailableIds.add(offerItem.billboardId),
+      );
+    }
+
+    return billboardIds.filter((billboardId) => !unavailableIds.has(billboardId));
+  }
+
+  private calculateBookingTotals(items: ResolvedBookingItem[]) {
+    return {
+      subtotalBeforeTax: items.reduce((total, item) => total + item.totalBeforeTax, 0),
+      totalTaxAmount: items.reduce((total, item) => total + item.taxAmount, 0),
+      totalAfterTax: items.reduce((total, item) => total + item.totalAfterTax, 0),
+      totalBeforeDiscount: items.reduce(
+        (total, item) => total + (item.totalBeforeDiscount ?? item.totalBeforeTax),
+        0,
+      ),
+      totalAfterDiscount: items.reduce(
+        (total, item) => total + (item.totalAfterDiscount ?? item.totalBeforeTax),
+        0,
+      ),
+    };
+  }
+
+  private toBookingRequestItemCreateInput(
+    item: ResolvedBookingItem,
+  ): Prisma.BookingRequestItemUncheckedCreateWithoutBookingRequestInput {
+    return {
+      billboardId: item.input.billboardId,
+      roadPackageId: item.input.roadPackageId,
+      offerId: item.input.offerId,
+      companyId: item.companyId,
+      itemType: item.input.itemType,
+      startDate: item.input.startDate,
+      endDate: item.input.endDate,
+      status: BookingRequestItemStatus.PENDING,
+      priceSnapshot: item.priceSnapshot,
+      pricingUnit: item.pricingUnit,
+      currency: item.currency,
+      taxRatePercent: item.taxRatePercent,
+      taxAmount: item.taxAmount,
+      totalBeforeTax: item.totalBeforeTax,
+      totalAfterTax: item.totalAfterTax,
+      discountAmount: item.discountAmount,
+    };
+  }
+
+  private async resolveExistingBookingItemForAvailability(item: {
+    itemType: BookingItemType;
+    billboardId?: string | null;
+    roadPackageId?: string | null;
+    offerId?: string | null;
+    startDate: Date;
+    endDate: Date;
+  }) {
+    const [resolvedItem] = await this.resolveBookingItems([
+      {
+        itemType: item.itemType,
+        billboardId: item.billboardId ?? undefined,
+        roadPackageId: item.roadPackageId ?? undefined,
+        offerId: item.offerId ?? undefined,
+        startDate: item.startDate,
+        endDate: item.endDate,
+      },
+    ]);
+
+    return resolvedItem;
+  }
+
   private toPublicBillboard(billboard: {
     media?: { isMain: boolean }[];
     type?: BillboardType;
@@ -968,17 +2340,64 @@ export class BillboardsService {
     };
   }
 
-  private withBookingBillboardMainImage(bookingRequest: {
-    billboard?: { media?: { isMain: boolean }[]; [key: string]: unknown };
+  private withOfferDiscountAmount<T extends Record<string, unknown>>(
+    offer: T,
+  ) {
+    return {
+      ...offer,
+      discountAmount:
+        Number(offer.originalTotalPrice) - Number(offer.discountedTotalPrice),
+    };
+  }
+
+  private toPublicOffer(offer: {
+    items?: {
+      billboard?: { media?: { isMain: boolean }[]; [key: string]: unknown };
+      [key: string]: unknown;
+    }[];
     [key: string]: unknown;
   }) {
-    if (!bookingRequest.billboard) {
-      return bookingRequest;
-    }
+    const offerWithDiscount = this.withOfferDiscountAmount(offer);
 
     return {
+      ...offerWithDiscount,
+      items: (offer.items ?? []).map((item) => ({
+        ...item,
+        billboard: item.billboard
+          ? this.toPublicBillboard(item.billboard)
+          : item.billboard,
+      })),
+    };
+  }
+
+  private withBookingBillboardMainImage(bookingRequest: {
+    billboard?: { media?: { isMain: boolean }[]; [key: string]: unknown } | null;
+    items?: {
+      billboard?: { media?: { isMain: boolean }[]; [key: string]: unknown } | null;
+      [key: string]: unknown;
+    }[];
+    [key: string]: unknown;
+  }) {
+    return {
       ...bookingRequest,
-      billboard: this.toPublicBillboard(bookingRequest.billboard),
+      billboard: bookingRequest.billboard
+        ? this.toPublicBillboard(bookingRequest.billboard)
+        : bookingRequest.billboard,
+      items: bookingRequest.items?.map((item) =>
+        this.withBookingItemMainImages(item),
+      ),
+    };
+  }
+
+  private withBookingItemMainImages<T extends {
+    billboard?: { media?: { isMain: boolean }[]; [key: string]: unknown } | null;
+    [key: string]: unknown;
+  }>(item: T) {
+    return {
+      ...item,
+      billboard: item.billboard
+        ? this.toPublicBillboard(item.billboard)
+        : item.billboard,
     };
   }
 
@@ -1026,6 +2445,73 @@ export class BillboardsService {
     if (startDate >= endDate) {
       throw new BadRequestException('startDate must be before endDate');
     }
+  }
+
+  private rangesOverlap(
+    startA: Date,
+    endA: Date,
+    startB: Date,
+    endB: Date,
+  ): boolean {
+    return startA < endB && endA > startB;
+  }
+
+  private minDate(dates: Date[]): Date {
+    return new Date(Math.min(...dates.map((date) => date.getTime())));
+  }
+
+  private maxDate(dates: Date[]): Date {
+    return new Date(Math.max(...dates.map((date) => date.getTime())));
+  }
+
+  private requireBillboardPrice(billboard: BookingBillboardSnapshot): number {
+    if (billboard.price === null) {
+      throw new BadRequestException('All selected billboards must have a price');
+    }
+
+    return Number(billboard.price);
+  }
+
+  private calculateTax(amount: number, taxRatePercent: number): number {
+    return amount * (taxRatePercent / 100);
+  }
+
+  private async syncBookingRequestStatus(bookingRequestId: string) {
+    const items =
+      await this.billboardsRepository.listBookingItemStatuses(bookingRequestId);
+    const statuses = items.map((item) => item.status);
+    const all = (status: BookingRequestItemStatus) =>
+      statuses.length > 0 && statuses.every((itemStatus) => itemStatus === status);
+    const has = (status: BookingRequestItemStatus) => statuses.includes(status);
+    let status: BookingRequestStatus = BookingRequestStatus.PENDING_REVIEW;
+
+    if (all(BookingRequestItemStatus.APPROVED)) {
+      status = BookingRequestStatus.APPROVED;
+    } else if (all(BookingRequestItemStatus.REJECTED)) {
+      status = BookingRequestStatus.REJECTED;
+    } else if (all(BookingRequestItemStatus.CANCELLED)) {
+      status = BookingRequestStatus.CANCELLED;
+    } else if (
+      has(BookingRequestItemStatus.APPROVED) &&
+      has(BookingRequestItemStatus.REJECTED)
+    ) {
+      status = BookingRequestStatus.PARTIALLY_REJECTED;
+    } else if (
+      has(BookingRequestItemStatus.APPROVED) &&
+      has(BookingRequestItemStatus.PENDING)
+    ) {
+      status = BookingRequestStatus.PARTIALLY_APPROVED;
+    }
+
+    await this.billboardsRepository.updateBookingRequest(bookingRequestId, {
+      status,
+    });
+
+    if (status === BookingRequestStatus.APPROVED) {
+      await this.notifyBookingFullyApproved(bookingRequestId);
+    }
+
+    return status;
   }
 
   private async ensureNoUnavailablePeriodOverlap(
@@ -1244,6 +2730,99 @@ export class BillboardsService {
       message: 'A billboard was submitted for approval.',
       entityType: 'BILLBOARD',
       entityId: billboardId,
+    });
+  }
+
+  private notifyRoadPackageSubmitted(roadPackageId: string) {
+    return this.notificationsService.create({
+      role: UserRole.SUPER_ADMIN,
+      type: NotificationType.BILLBOARD_SUBMITTED,
+      title: 'Road billboard package submitted for approval',
+      message: 'A road billboard package was submitted for approval.',
+      entityType: 'ROAD_BILLBOARD_PACKAGE',
+      entityId: roadPackageId,
+    });
+  }
+
+  private notifyOfferSubmitted(offerId: string) {
+    return this.notificationsService.create({
+      role: UserRole.SUPER_ADMIN,
+      type: NotificationType.BILLBOARD_SUBMITTED,
+      title: 'Billboard offer submitted for approval',
+      message: 'A billboard offer was submitted for approval.',
+      entityType: 'OFFER',
+      entityId: offerId,
+    });
+  }
+
+  private async notifyBookingCreated(
+    bookingRequestId: string,
+    items: ResolvedBookingItem[],
+  ) {
+    const companyIds = Array.from(new Set(items.map((item) => item.companyId)));
+
+    await Promise.all([
+      ...companyIds.map((companyId) =>
+        this.notificationsService.create({
+          companyId,
+          type: NotificationType.BOOKING_REQUEST_CREATED,
+          title: 'New booking item',
+          message: 'A customer created a booking that includes your company.',
+          entityType: 'BOOKING_REQUEST',
+          entityId: bookingRequestId,
+        }),
+      ),
+      this.notificationsService.create({
+        role: UserRole.SUPER_ADMIN,
+        type: NotificationType.BOOKING_REQUEST_CREATED,
+        title: 'New booking request',
+        message: 'A customer created a new multi-item booking request.',
+        entityType: 'BOOKING_REQUEST',
+        entityId: bookingRequestId,
+      }),
+    ]);
+  }
+
+  private async notifyBookingItemStatusChanged(
+    bookingRequestId: string,
+    bookingRequestItemId: string,
+  ) {
+    const bookingRequest =
+      await this.billboardsRepository.findBookingRequestDetailById(
+        bookingRequestId,
+      );
+
+    if (!bookingRequest) {
+      return;
+    }
+
+    await this.notificationsService.create({
+      userId: bookingRequest.customerId,
+      type: NotificationType.BOOKING_REQUEST_STATUS_CHANGED,
+      title: 'Booking item status updated',
+      message: 'A partner updated one of your booking items.',
+      entityType: 'BOOKING_REQUEST_ITEM',
+      entityId: bookingRequestItemId,
+    });
+  }
+
+  private async notifyBookingFullyApproved(bookingRequestId: string) {
+    const bookingRequest =
+      await this.billboardsRepository.findBookingRequestDetailById(
+        bookingRequestId,
+      );
+
+    if (!bookingRequest) {
+      return;
+    }
+
+    await this.notificationsService.create({
+      userId: bookingRequest.customerId,
+      type: NotificationType.BOOKING_REQUEST_STATUS_CHANGED,
+      title: 'Booking request approved',
+      message: 'All items in your booking request were approved.',
+      entityType: 'BOOKING_REQUEST',
+      entityId: bookingRequestId,
     });
   }
 }

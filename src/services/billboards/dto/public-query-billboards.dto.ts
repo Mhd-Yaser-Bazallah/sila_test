@@ -2,6 +2,7 @@ import { BillboardType, PricingUnit } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   IsBoolean,
+  IsDate,
   IsEnum,
   IsInt,
   IsNumber,
@@ -90,4 +91,14 @@ export class PublicQueryBillboardsDto {
   @Min(1)
   @Max(12)
   limitSimilar = 6;
+
+  @Type(() => Date)
+  @IsOptional()
+  @IsDate()
+  availableFrom?: Date;
+
+  @Type(() => Date)
+  @IsOptional()
+  @IsDate()
+  availableTo?: Date;
 }
