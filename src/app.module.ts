@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { BillboardsModule } from './services/billboards/billboards.module';
+import { ExhibitionsModule } from './services/exhibitions/exhibitions.module';
 import { AuthModule } from './shared/auth/auth.module';
 import { CompaniesModule } from './shared/companies/companies.module';
 import { AppConfigModule } from './shared/config/config.module';
@@ -16,6 +17,7 @@ import { UsersModule } from './shared/users/users.module';
     CompaniesModule,
     UsersModule,
     BillboardsModule,
+    ExhibitionsModule,
     NotificationsModule,
     HealthModule,
   ],

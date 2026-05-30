@@ -51,6 +51,43 @@ enum BillboardType {
   THREE_D
 }
 
+enum ExhibitionStatus {
+  DRAFT
+  MAP_IN_PROGRESS
+  MAP_CONFIRMED
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  ARCHIVED
+}
+
+enum ExhibitionBoothStatus {
+  AVAILABLE
+  BOOKED
+  UNAVAILABLE
+}
+
+enum ExhibitionMapShape {
+  RECTANGLE
+  POLYGON
+}
+
+enum ExhibitionBookingRequestStatus {
+  PENDING_REVIEW
+  PARTIALLY_APPROVED
+  APPROVED
+  PARTIALLY_REJECTED
+  REJECTED
+  CANCELLED
+}
+
+enum ExhibitionBookingItemStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
 enum PrintedSubtype {
   FLEX
   STANDARD
@@ -132,6 +169,7 @@ model User {
 
   company         Company?         @relation(fields: [companyId], references: [id], onDelete: SetNull)
   bookingRequests BookingRequest[]
+  exhibitionBookingRequests ExhibitionBookingRequest[]
   notifications   Notification[]
 
   @@index([role])
@@ -175,6 +213,8 @@ model Company {
   users                 User[]
   serviceSubscriptions  CompanyServiceSubscription[]
   billboards            Billboard[]
+  exhibitions           Exhibition[]
+  exhibitionBookingRequests ExhibitionBookingRequest[]
   roadBillboardPackages RoadBillboardPackage[]
   offers                Offer[]
   bookingRequestItems   BookingRequestItem[]
@@ -303,6 +343,170 @@ model BillboardUnavailablePeriod {
 
   @@index([billboardId])
   @@index([billboardId, startDate, endDate])
+}
+
+model Exhibition {
+  id                  String           @id @default(uuid()) @db.Uuid
+  companyId           String           @db.Uuid
+  title               String
+  subtitle            String?
+  slug                String           @unique
+  description         String?
+  heroImageUrl        String?
+  visitorCount        Int?
+  participantCount    Int?
+  participationDays   Int?
+  startsAt            DateTime?
+  endsAt              DateTime?
+  venueName           String?
+  country             String?
+  province            String?
+  city                String?
+  addressText         String?
+  status              ExhibitionStatus @default(DRAFT)
+  rejectionReason     String?
+  approvedAt          DateTime?
+  mapImageUrl         String?
+  mapPdfUrl           String?
+  mapConfirmedAt      DateTime?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  deletedAt           DateTime?
+
+  company               Company                          @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  aboutCards            ExhibitionAboutCard[]
+  sectors               ExhibitionSector[]
+  participationFeatures ExhibitionParticipationFeature[]
+  booths                ExhibitionBooth[]
+  bookingRequests       ExhibitionBookingRequest[]
+
+  @@index([companyId])
+  @@index([status])
+  @@index([slug])
+  @@index([city])
+  @@index([startsAt, endsAt])
+}
+
+model ExhibitionAboutCard {
+  id           String   @id @default(uuid()) @db.Uuid
+  exhibitionId String   @db.Uuid
+  title        String
+  text         String
+  imageUrl     String?
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  exhibition Exhibition @relation(fields: [exhibitionId], references: [id], onDelete: Cascade)
+
+  @@index([exhibitionId])
+}
+
+model ExhibitionSector {
+  id           String   @id @default(uuid()) @db.Uuid
+  exhibitionId String   @db.Uuid
+  title        String
+  text         String?
+  imageUrl     String?
+  bullets      Json?
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  exhibition Exhibition @relation(fields: [exhibitionId], references: [id], onDelete: Cascade)
+
+  @@index([exhibitionId])
+}
+
+model ExhibitionParticipationFeature {
+  id           String   @id @default(uuid()) @db.Uuid
+  exhibitionId String   @db.Uuid
+  title        String
+  text         String
+  imageUrl     String?
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  exhibition Exhibition @relation(fields: [exhibitionId], references: [id], onDelete: Cascade)
+
+  @@index([exhibitionId])
+}
+
+model ExhibitionBooth {
+  id           String                 @id @default(uuid()) @db.Uuid
+  exhibitionId String                 @db.Uuid
+  code         String
+  title        String
+  description  String?
+  price        Decimal                @db.Decimal(12, 2)
+  currency     String                 @default("USD")
+  status       ExhibitionBoothStatus  @default(AVAILABLE)
+  shape        ExhibitionMapShape
+  coordinates  Json
+  color        String?
+  area         String?
+  sortOrder    Int                    @default(0)
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+  deletedAt    DateTime?
+
+  exhibition Exhibition @relation(fields: [exhibitionId], references: [id], onDelete: Restrict)
+  bookingItems ExhibitionBookingItem[]
+
+  @@unique([exhibitionId, code])
+  @@index([exhibitionId])
+  @@index([status])
+  @@index([exhibitionId, code])
+}
+
+model ExhibitionBookingRequest {
+  id                   String                         @id @default(uuid()) @db.Uuid
+  exhibitionId         String                         @db.Uuid
+  companyId            String                         @db.Uuid
+  customerId           String                         @db.Uuid
+  customerFullName     String
+  customerPhone        String
+  customerEmail        String
+  customerCompany      String?
+  customerNotes        String?
+  customerCompanyScope CustomerCompanyScope?
+  customerSector       CustomerSector?
+  subtotalBeforeTax    Decimal?                       @db.Decimal(12, 2)
+  totalTaxAmount       Decimal?                       @db.Decimal(12, 2)
+  totalAfterTax        Decimal?                       @db.Decimal(12, 2)
+  status               ExhibitionBookingRequestStatus @default(PENDING_REVIEW)
+  createdAt            DateTime                       @default(now())
+  updatedAt            DateTime                       @updatedAt
+  deletedAt            DateTime?
+
+  exhibition Exhibition              @relation(fields: [exhibitionId], references: [id], onDelete: Restrict)
+  company    Company                 @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  customer   User                    @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  items      ExhibitionBookingItem[]
+
+  @@index([exhibitionId])
+  @@index([companyId])
+  @@index([customerId])
+  @@index([status])
+}
+
+model ExhibitionBookingItem {
+  id               String                      @id @default(uuid()) @db.Uuid
+  bookingRequestId String                      @db.Uuid
+  boothId          String                      @db.Uuid
+  status           ExhibitionBookingItemStatus @default(PENDING)
+  priceSnapshot    Decimal                     @db.Decimal(12, 2)
+  currency         String
+  partnerNotes     String?
+  approvedAt       DateTime?
+  rejectedAt       DateTime?
+  createdAt        DateTime                    @default(now())
+  updatedAt        DateTime                    @updatedAt
+
+  bookingRequest ExhibitionBookingRequest @relation(fields: [bookingRequestId], references: [id], onDelete: Cascade)
+  booth          ExhibitionBooth          @relation(fields: [boothId], references: [id], onDelete: Restrict)
+
+  @@index([bookingRequestId])
+  @@index([boothId])
+  @@index([status])
 }
 
 model BookingRequest {

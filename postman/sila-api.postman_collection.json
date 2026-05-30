@@ -723,6 +723,211 @@
       ]
     },
     {
+      "name": "Partner Exhibitions",
+      "item": [
+        {
+          "name": "Create Exhibition",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const data = pm.response.json().data;",
+                  "if (data && data.id) pm.environment.set('exhibition_id', data.id);",
+                  "if (data && data.slug) pm.environment.set('exhibition_slug', data.slug);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Sila Expo 2026\",\n  \"subtitle\": \"Regional business exhibition\",\n  \"description\": \"A multi-sector exhibition for brands and visitors.\",\n  \"heroImageUrl\": \"https://example.com/exhibitions/sila-expo.jpg\",\n  \"visitorCount\": 12000,\n  \"participantCount\": 220,\n  \"participationDays\": 4,\n  \"startsAt\": \"2026-09-01T09:00:00.000Z\",\n  \"endsAt\": \"2026-09-04T18:00:00.000Z\",\n  \"venueName\": \"Sila Convention Center\",\n  \"country\": \"Syria\",\n  \"province\": \"Damascus\",\n  \"city\": \"Damascus\",\n  \"addressText\": \"Main exhibition grounds\",\n  \"aboutCards\": [\n    { \"title\": \"About\", \"text\": \"A focused exhibition for business growth.\", \"sortOrder\": 0 }\n  ],\n  \"sectors\": [\n    { \"title\": \"Technology\", \"text\": \"Software, hardware, and services.\", \"bullets\": [\"SaaS\", \"AI\", \"Infrastructure\"], \"sortOrder\": 0 }\n  ],\n  \"participationFeatures\": [\n    { \"title\": \"Lead generation\", \"text\": \"Meet visitors and qualified buyers.\", \"sortOrder\": 0 }\n  ]\n}"
+            },
+            "url": "{{base_url}}/partner/exhibitions"
+          }
+        },
+        { "name": "List Partner Exhibitions", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": "{{base_url}}/partner/exhibitions?page=1&limit=20" } },
+        { "name": "Get Partner Exhibition", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": "{{base_url}}/partner/exhibitions/{{exhibition_id}}" } },
+        {
+          "name": "Update Exhibition",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"subtitle\": \"Updated regional business exhibition\",\n  \"city\": \"Damascus\"\n}" },
+            "url": "{{base_url}}/partner/exhibitions/{{exhibition_id}}"
+          }
+        },
+        {
+          "name": "Update Map Files",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"mapImageUrl\": \"https://example.com/exhibitions/sila-expo-map.png\",\n  \"mapPdfUrl\": \"https://example.com/exhibitions/sila-expo-map.pdf\"\n}" },
+            "url": "{{base_url}}/partner/exhibitions/{{exhibition_id}}/map-files"
+          }
+        },
+        {
+          "name": "Upload Map Files",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "mapImage", "type": "file", "src": [] },
+                { "key": "mapPdf", "type": "file", "src": [] }
+              ]
+            },
+            "url": "{{base_url}}/partner/exhibitions/{{exhibition_id}}/map-files/upload"
+          }
+        },
+        {
+          "name": "Create Booth",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const data = pm.response.json().data;",
+                  "if (data && data.id) pm.environment.set('exhibition_booth_id', data.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"code\": \"A-01\",\n  \"title\": \"Booth A-01\",\n  \"description\": \"Near main entrance\",\n  \"price\": 500,\n  \"currency\": \"USD\",\n  \"status\": \"AVAILABLE\",\n  \"shape\": \"POLYGON\",\n  \"coordinates\": [\n    { \"x\": 12.5, \"y\": 20.3 },\n    { \"x\": 18.7, \"y\": 20.3 },\n    { \"x\": 18.7, \"y\": 28.1 },\n    { \"x\": 12.5, \"y\": 28.1 }\n  ],\n  \"color\": \"#FFCC00\",\n  \"area\": \"12 sqm\",\n  \"sortOrder\": 0\n}" },
+            "url": "{{base_url}}/partner/exhibitions/{{exhibition_id}}/booths"
+          }
+        },
+        { "name": "List Booths", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": "{{base_url}}/partner/exhibitions/{{exhibition_id}}/booths?page=1&limit=20" } },
+        { "name": "Confirm Map", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] }, "method": "PATCH", "header": [], "url": "{{base_url}}/partner/exhibitions/{{exhibition_id}}/confirm-map" } },
+        { "name": "Submit Exhibition", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] }, "method": "PATCH", "header": [], "url": "{{base_url}}/partner/exhibitions/{{exhibition_id}}/submit" } }
+      ]
+    },
+    {
+      "name": "Admin Exhibitions",
+      "item": [
+        { "name": "List Admin Exhibitions", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": "{{base_url}}/admin/exhibitions?page=1&limit=20" } },
+        { "name": "Get Admin Exhibition", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": "{{base_url}}/admin/exhibitions/{{exhibition_id}}" } },
+        { "name": "Approve Exhibition", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] }, "method": "PATCH", "header": [], "url": "{{base_url}}/admin/exhibitions/{{exhibition_id}}/approve" } },
+        { "name": "Reject Exhibition", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] }, "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Please improve map clarity before approval.\"\n}" }, "url": "{{base_url}}/admin/exhibitions/{{exhibition_id}}/reject" } },
+        { "name": "Archive Exhibition", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] }, "method": "PATCH", "header": [], "url": "{{base_url}}/admin/exhibitions/{{exhibition_id}}/archive" } },
+        {
+          "name": "Upload Map Files",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "mapImage", "type": "file", "src": [] },
+                { "key": "mapPdf", "type": "file", "src": [] }
+              ]
+            },
+            "url": "{{base_url}}/admin/exhibitions/{{exhibition_id}}/map-files/upload"
+          }
+        },
+        { "name": "Admin Update Booth", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] }, "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"color\": \"#33AAFF\",\n  \"area\": \"12 sqm\"\n}" }, "url": "{{base_url}}/admin/exhibitions/{{exhibition_id}}/booths/{{exhibition_booth_id}}" } }
+      ]
+    },
+    {
+      "name": "Public Exhibitions",
+      "item": [
+        { "name": "List Public Exhibitions", "request": { "method": "GET", "header": [], "url": "{{base_url}}/public/exhibitions?page=1&limit=20" } },
+        { "name": "Get Public Exhibition", "request": { "method": "GET", "header": [], "url": "{{base_url}}/public/exhibitions/{{exhibition_slug}}" } }
+      ]
+    },
+    {
+      "name": "Customer Exhibition Bookings",
+      "item": [
+        {
+          "name": "Create Exhibition Booking",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const data = pm.response.json().data;",
+                  "if (data && data.id) pm.environment.set('exhibition_booking_id', data.id);",
+                  "if (data && data.items && data.items.length > 0) pm.environment.set('exhibition_booking_item_id', data.items[0].id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customer_access_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"boothIds\": [\"{{exhibition_booth_id}}\"],\n  \"customerCompany\": \"Acme LLC\",\n  \"customerNotes\": \"Interested in booth availability.\",\n  \"customerCompanyScope\": \"LOCAL\",\n  \"customerSector\": \"PRIVATE\"\n}" },
+            "url": "{{base_url}}/customer/exhibitions/{{exhibition_id}}/bookings"
+          }
+        },
+        { "name": "List Customer Exhibition Bookings", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customer_access_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": "{{base_url}}/customer/exhibition-bookings?page=1&limit=20" } },
+        { "name": "Get Customer Exhibition Booking", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customer_access_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": "{{base_url}}/customer/exhibition-bookings/{{exhibition_booking_id}}" } },
+        { "name": "Cancel Customer Exhibition Booking", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customer_access_token}}", "type": "string" }] }, "method": "PATCH", "header": [], "url": "{{base_url}}/customer/exhibition-bookings/{{exhibition_booking_id}}/cancel" } }
+      ]
+    },
+    {
+      "name": "Partner Exhibition Booking Items",
+      "item": [
+        {
+          "name": "List Partner Exhibition Booking Items",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const items = json.data || [];",
+                  "if (Array.isArray(items) && items.length > 0) pm.environment.set('exhibition_booking_item_id', items[0].id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/partner/exhibition-booking-items?page=1&limit=20&status=PENDING"
+          }
+        },
+        { "name": "Get Partner Exhibition Booking Item", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": "{{base_url}}/partner/exhibition-booking-items/{{exhibition_booking_item_id}}" } },
+        { "name": "Approve Exhibition Booking Item", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] }, "method": "PATCH", "header": [], "url": "{{base_url}}/partner/exhibition-booking-items/{{exhibition_booking_item_id}}/approve" } },
+        {
+          "name": "Reject Exhibition Booking Item",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"partnerNotes\": \"This booth is no longer suitable for the request.\"\n}" },
+            "url": "{{base_url}}/partner/exhibition-booking-items/{{exhibition_booking_item_id}}/reject"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin Exhibition Bookings",
+      "item": [
+        { "name": "List Admin Exhibition Bookings", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": "{{base_url}}/admin/exhibition-bookings?page=1&limit=20" } },
+        { "name": "Get Admin Exhibition Booking", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": "{{base_url}}/admin/exhibition-bookings/{{exhibition_booking_id}}" } }
+      ]
+    },
+    {
       "name": "Customer Bookings",
       "item": [
         {

@@ -1,0 +1,1534 @@
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import '@fastify/multipart';
+import type { MultipartFile } from '@fastify/multipart';
+import type { FastifyRequest } from 'fastify';
+import {
+  ExhibitionBookingItemStatus,
+  ExhibitionBookingRequestStatus,
+  ExhibitionBoothStatus,
+  ExhibitionMapShape,
+  ExhibitionStatus,
+  NotificationType,
+  Prisma,
+  ServiceSubscriptionStatus,
+  ServiceType,
+  UserRole,
+} from '@prisma/client';
+import { randomUUID } from 'node:crypto';
+import { createWriteStream } from 'node:fs';
+import { mkdir, unlink } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import { pipeline } from 'node:stream/promises';
+import { AuthenticatedUser } from '../../shared/auth/interfaces/authenticated-user.interface';
+import { NotificationsService } from '../../shared/notifications/notifications.service';
+import { CreateExhibitionBookingDto } from './dto/create-exhibition-booking.dto';
+import { CreateExhibitionBoothDto } from './dto/create-exhibition-booth.dto';
+import { CreateExhibitionDto } from './dto/create-exhibition.dto';
+import { QueryExhibitionBookingItemsDto } from './dto/query-exhibition-booking-items.dto';
+import { QueryExhibitionBookingsDto } from './dto/query-exhibition-bookings.dto';
+import { QueryExhibitionBoothsDto } from './dto/query-exhibition-booths.dto';
+import { QueryExhibitionsDto } from './dto/query-exhibitions.dto';
+import { RejectExhibitionBookingItemDto } from './dto/reject-exhibition-booking-item.dto';
+import { RejectExhibitionDto } from './dto/reject-exhibition.dto';
+import { UpdateExhibitionBoothDto } from './dto/update-exhibition-booth.dto';
+import { UpdateExhibitionMapFilesDto } from './dto/update-exhibition-map-files.dto';
+import { UpdateExhibitionDto } from './dto/update-exhibition.dto';
+import {
+  ExhibitionContentInput,
+  ExhibitionsRepository,
+} from './exhibitions.repository';
+
+const EXHIBITION_MAP_UPLOAD_DIR = join('exhibitions', 'maps');
+const ALLOWED_MAP_IMAGE_MIME_TYPES = new Map([
+  ['image/jpeg', '.jpg'],
+  ['image/png', '.png'],
+  ['image/webp', '.webp'],
+]);
+const MAP_PDF_MIME_TYPE = 'application/pdf';
+
+const PARTNER_EDITABLE_EXHIBITION_STATUSES = new Set<ExhibitionStatus>([
+  ExhibitionStatus.DRAFT,
+  ExhibitionStatus.MAP_IN_PROGRESS,
+  ExhibitionStatus.MAP_CONFIRMED,
+  ExhibitionStatus.REJECTED,
+  ExhibitionStatus.APPROVED,
+]);
+
+interface MultipartValue {
+  type: 'field';
+  value: unknown;
+  fieldname: string;
+}
+
+interface MultipartFastifyRequest extends FastifyRequest {
+  isMultipart: () => boolean;
+  parts: (options?: {
+    limits?: {
+      fileSize?: number;
+      files?: number;
+      fields?: number;
+      parts?: number;
+    };
+  }) => AsyncIterableIterator<MultipartFile | MultipartValue>;
+}
+
+interface ParsedMapFilesUpload {
+  mapImage?: StoredMapFile;
+  mapPdf?: StoredMapFile;
+}
+
+interface StoredMapFile {
+  url: string;
+  filePath: string;
+}
+
+@Injectable()
+export class ExhibitionsService {
+  constructor(
+    private readonly exhibitionsRepository: ExhibitionsRepository,
+    private readonly notificationsService: NotificationsService,
+    private readonly configService: ConfigService,
+  ) {}
+
+  async createPartnerExhibition(
+    user: AuthenticatedUser,
+    createExhibitionDto: CreateExhibitionDto,
+  ) {
+    const companyId = await this.getPartnerCompanyIdWithSubscription(user);
+    const slug = await this.generateUniqueSlug(createExhibitionDto.title);
+    const { content, data } = this.toExhibitionData(createExhibitionDto);
+
+    return this.exhibitionsRepository.createExhibition(
+      {
+        ...data,
+        companyId,
+        slug,
+        title: createExhibitionDto.title,
+        status: ExhibitionStatus.DRAFT,
+      },
+      content,
+    );
+  }
+
+  async findPartnerExhibitions(
+    user: AuthenticatedUser,
+    query: QueryExhibitionsDto,
+  ) {
+    const companyId = await this.getPartnerCompanyIdWithSubscription(user);
+
+    return this.exhibitionsRepository.paginate({
+      page: query.page,
+      limit: query.limit,
+      where: this.buildWhere(query, companyId),
+      include: this.exhibitionsRepository.listInclude(),
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async findPartnerExhibition(user: AuthenticatedUser, id: string) {
+    const companyId = await this.getPartnerCompanyIdWithSubscription(user);
+    const exhibition = await this.exhibitionsRepository.findCompanyExhibition(
+      id,
+      companyId,
+    );
+
+    if (!exhibition) {
+      throw new NotFoundException('Exhibition not found');
+    }
+
+    return exhibition;
+  }
+
+  async updatePartnerExhibition(
+    user: AuthenticatedUser,
+    id: string,
+    updateExhibitionDto: UpdateExhibitionDto,
+  ) {
+    const exhibition = await this.findPartnerExhibition(user, id);
+
+    if (!PARTNER_EDITABLE_EXHIBITION_STATUSES.has(exhibition.status)) {
+      throw new BadRequestException(
+        'Exhibition cannot be edited in its current status',
+      );
+    }
+
+    const { content, data } = this.toExhibitionData(updateExhibitionDto);
+    const shouldResubmit = exhibition.status === ExhibitionStatus.APPROVED;
+    const updated = await this.exhibitionsRepository.updateExhibition(
+      id,
+      {
+        ...data,
+        ...(shouldResubmit
+          ? {
+              status: ExhibitionStatus.PENDING_APPROVAL,
+              approvedAt: null,
+            }
+          : {}),
+      },
+      content,
+    );
+
+    if (shouldResubmit) {
+      await this.notifyExhibitionSubmitted(id);
+    }
+
+    return updated;
+  }
+
+  async deletePartnerExhibition(user: AuthenticatedUser, id: string) {
+    await this.findPartnerExhibition(user, id);
+
+    return this.exhibitionsRepository.softDeleteExhibition(id, new Date());
+  }
+
+  async updatePartnerMapFiles(
+    user: AuthenticatedUser,
+    id: string,
+    updateMapFilesDto: UpdateExhibitionMapFilesDto,
+  ) {
+    const exhibition = await this.findPartnerExhibition(user, id);
+
+    if (
+      exhibition.status === ExhibitionStatus.APPROVED ||
+      exhibition.status === ExhibitionStatus.ARCHIVED
+    ) {
+      throw new BadRequestException(
+        'Approved or archived exhibitions cannot replace map files',
+      );
+    }
+
+    return this.exhibitionsRepository.updateExhibition(id, {
+      mapImageUrl: updateMapFilesDto.mapImageUrl,
+      mapPdfUrl: updateMapFilesDto.mapPdfUrl,
+      ...(exhibition.status === ExhibitionStatus.DRAFT
+        ? { status: ExhibitionStatus.MAP_IN_PROGRESS }
+        : {}),
+    });
+  }
+
+  async uploadPartnerMapFiles(
+    user: AuthenticatedUser,
+    id: string,
+    request: FastifyRequest,
+  ) {
+    const exhibition = await this.findPartnerExhibition(user, id);
+
+    if (
+      exhibition.status === ExhibitionStatus.APPROVED ||
+      exhibition.status === ExhibitionStatus.ARCHIVED
+    ) {
+      throw new BadRequestException(
+        'Approved or archived exhibitions cannot replace map files',
+      );
+    }
+
+    const upload = await this.parseAndStoreMapFilesUpload(request, id);
+
+    try {
+      return await this.exhibitionsRepository.updateExhibition(
+        id,
+        this.toMapFilesUpdateData(upload, exhibition.status),
+      );
+    } catch (error) {
+      await this.deleteStoredMapFiles(upload);
+      throw error;
+    }
+  }
+
+  async createPartnerBooth(
+    user: AuthenticatedUser,
+    exhibitionId: string,
+    createBoothDto: CreateExhibitionBoothDto,
+  ) {
+    const exhibition = await this.findPartnerExhibition(user, exhibitionId);
+    this.ensurePartnerCanManageBooths(exhibition.status);
+    this.validateCoordinates(createBoothDto.shape, createBoothDto.coordinates);
+
+    try {
+      return await this.exhibitionsRepository.createBooth({
+        exhibitionId,
+        code: createBoothDto.code,
+        title: createBoothDto.title,
+        description: createBoothDto.description,
+        price: createBoothDto.price,
+        currency: createBoothDto.currency ?? 'USD',
+        status: createBoothDto.status ?? ExhibitionBoothStatus.AVAILABLE,
+        shape: createBoothDto.shape,
+        coordinates: createBoothDto.coordinates as unknown as Prisma.InputJsonValue,
+        color: createBoothDto.color,
+        area: createBoothDto.area,
+        sortOrder: createBoothDto.sortOrder ?? 0,
+      });
+    } catch (error) {
+      if (this.isUniqueConstraintError(error)) {
+        throw new ConflictException('Booth code already exists');
+      }
+
+      throw error;
+    }
+  }
+
+  async findPartnerBooths(
+    user: AuthenticatedUser,
+    exhibitionId: string,
+    query: QueryExhibitionBoothsDto,
+  ) {
+    await this.findPartnerExhibition(user, exhibitionId);
+
+    return this.paginateBooths(exhibitionId, query);
+  }
+
+  async createCustomerBooking(
+    user: AuthenticatedUser,
+    exhibitionId: string,
+    createBookingDto: CreateExhibitionBookingDto,
+  ) {
+    this.ensureCustomer(user);
+    const exhibition =
+      await this.exhibitionsRepository.findPublicBookableExhibition(
+        exhibitionId,
+      );
+
+    if (!exhibition) {
+      throw new NotFoundException('Exhibition not found');
+    }
+
+    const uniqueBoothIds = Array.from(new Set(createBookingDto.boothIds));
+    if (uniqueBoothIds.length !== createBookingDto.boothIds.length) {
+      throw new BadRequestException('boothIds must be unique');
+    }
+
+    const booths = exhibition.booths.filter((booth) =>
+      uniqueBoothIds.includes(booth.id),
+    );
+
+    if (booths.length !== uniqueBoothIds.length) {
+      throw new BadRequestException(
+        'All booths must belong to the exhibition',
+      );
+    }
+
+    const unavailableBooth = booths.find(
+      (booth) => booth.status !== ExhibitionBoothStatus.AVAILABLE,
+    );
+
+    if (unavailableBooth) {
+      throw new BadRequestException('All booths must be available');
+    }
+
+    const subtotalBeforeTax = booths.reduce(
+      (total, booth) => total + Number(booth.price),
+      0,
+    );
+    const totalTaxAmount = 0;
+    const totalAfterTax = subtotalBeforeTax;
+
+    const booking =
+      await this.exhibitionsRepository.createBookingRequestWithItems({
+        data: {
+          exhibitionId: exhibition.id,
+          companyId: exhibition.companyId,
+          customerId: user.id,
+          customerFullName: user.fullName,
+          customerPhone: user.phone ?? '',
+          customerEmail: user.email,
+          customerCompany: createBookingDto.customerCompany,
+          customerNotes: createBookingDto.customerNotes,
+          customerCompanyScope: createBookingDto.customerCompanyScope,
+          customerSector: createBookingDto.customerSector,
+          subtotalBeforeTax,
+          totalTaxAmount,
+          totalAfterTax,
+          status: ExhibitionBookingRequestStatus.PENDING_REVIEW,
+        },
+        items: booths.map((booth) => ({
+          boothId: booth.id,
+          status: ExhibitionBookingItemStatus.PENDING,
+          priceSnapshot: booth.price,
+          currency: booth.currency,
+        })),
+      });
+
+    await this.notifyExhibitionBookingCreated(booking.id, exhibition.companyId);
+
+    return booking;
+  }
+
+  findCustomerBookings(
+    user: AuthenticatedUser,
+    query: QueryExhibitionBookingsDto,
+  ) {
+    this.ensureCustomer(user);
+
+    return this.paginateBookingRequests({
+      page: query.page,
+      limit: query.limit,
+      where: this.buildBookingWhere(query, user.id),
+      include: this.exhibitionsRepository.bookingDetailInclude(),
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async findCustomerBooking(user: AuthenticatedUser, id: string) {
+    this.ensureCustomer(user);
+    const booking = await this.exhibitionsRepository.findCustomerBookingRequest(
+      id,
+      user.id,
+    );
+
+    if (!booking) {
+      throw new NotFoundException('Exhibition booking not found');
+    }
+
+    return booking;
+  }
+
+  async cancelCustomerBooking(user: AuthenticatedUser, id: string) {
+    const booking = await this.findCustomerBooking(user, id);
+    const hasPendingItems = booking.items.some(
+      (item) => item.status === ExhibitionBookingItemStatus.PENDING,
+    );
+
+    if (!hasPendingItems) {
+      throw new BadRequestException('Booking has no pending items to cancel');
+    }
+
+    await this.exhibitionsRepository.cancelPendingBookingItems(id);
+    await this.syncExhibitionBookingStatus(id);
+
+    return this.findCustomerBooking(user, id);
+  }
+
+  async findPartnerBookingItems(
+    user: AuthenticatedUser,
+    query: QueryExhibitionBookingItemsDto,
+  ) {
+    const companyId = await this.getPartnerCompanyIdWithSubscription(user);
+
+    return this.paginateBookingItems({
+      page: query.page,
+      limit: query.limit,
+      where: this.buildBookingItemWhere(query, companyId),
+      select: this.exhibitionsRepository.partnerBookingItemSelect(),
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async findPartnerBookingItem(user: AuthenticatedUser, id: string) {
+    const companyId = await this.getPartnerCompanyIdWithSubscription(user);
+    const item = await this.exhibitionsRepository.findPartnerBookingItemPublic(
+      id,
+      companyId,
+    );
+
+    if (!item) {
+      throw new NotFoundException('Exhibition booking item not found');
+    }
+
+    return item;
+  }
+
+  async approvePartnerBookingItem(user: AuthenticatedUser, id: string) {
+    const companyId = await this.getPartnerCompanyIdWithSubscription(user);
+    const item = await this.exhibitionsRepository.findPartnerBookingItem(
+      id,
+      companyId,
+    );
+
+    if (!item) {
+      throw new NotFoundException('Exhibition booking item not found');
+    }
+
+    if (item.status !== ExhibitionBookingItemStatus.PENDING) {
+      throw new BadRequestException('Only pending booking items can be approved');
+    }
+
+    if (item.booth.status !== ExhibitionBoothStatus.AVAILABLE) {
+      throw new BadRequestException('Booth is no longer available');
+    }
+
+    const approved = await this.exhibitionsRepository.approveBookingItem(
+      item.id,
+      item.boothId,
+      new Date(),
+    );
+
+    if (!approved) {
+      throw new BadRequestException('Booth is no longer available');
+    }
+
+    const parentStatus = await this.syncExhibitionBookingStatus(
+      item.bookingRequestId,
+    );
+
+    await this.notifyExhibitionBookingItemStatusChanged(
+      item.bookingRequest.customerId,
+      item.id,
+      'Exhibition booking item approved',
+      'A partner approved one of your exhibition booking items.',
+    );
+
+    if (parentStatus === ExhibitionBookingRequestStatus.APPROVED) {
+      await this.notifyExhibitionBookingFullyApproved(
+        item.bookingRequest.customerId,
+        item.bookingRequestId,
+      );
+    }
+
+    return approved;
+  }
+
+  async rejectPartnerBookingItem(
+    user: AuthenticatedUser,
+    id: string,
+    rejectDto: RejectExhibitionBookingItemDto,
+  ) {
+    const companyId = await this.getPartnerCompanyIdWithSubscription(user);
+    const item = await this.exhibitionsRepository.findPartnerBookingItem(
+      id,
+      companyId,
+    );
+
+    if (!item) {
+      throw new NotFoundException('Exhibition booking item not found');
+    }
+
+    if (item.status !== ExhibitionBookingItemStatus.PENDING) {
+      throw new BadRequestException('Only pending booking items can be rejected');
+    }
+
+    const rejected = await this.exhibitionsRepository.rejectBookingItem(
+      item.id,
+      rejectDto.partnerNotes,
+      new Date(),
+    );
+
+    await this.syncExhibitionBookingStatus(item.bookingRequestId);
+    await this.notifyExhibitionBookingItemStatusChanged(
+      item.bookingRequest.customerId,
+      item.id,
+      'Exhibition booking item rejected',
+      'A partner rejected one of your exhibition booking items.',
+    );
+
+    return rejected;
+  }
+
+  findAdminBookings(query: QueryExhibitionBookingsDto) {
+    return this.paginateBookingRequests({
+      page: query.page,
+      limit: query.limit,
+      where: this.buildBookingWhere(query),
+      include: this.exhibitionsRepository.bookingDetailInclude(),
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async findAdminBooking(id: string) {
+    const booking = await this.exhibitionsRepository.findBookingRequestById(id);
+
+    if (!booking) {
+      throw new NotFoundException('Exhibition booking not found');
+    }
+
+    return booking;
+  }
+
+  async findPartnerBooth(
+    user: AuthenticatedUser,
+    exhibitionId: string,
+    boothId: string,
+  ) {
+    await this.findPartnerExhibition(user, exhibitionId);
+
+    return this.findBoothOrThrow(exhibitionId, boothId);
+  }
+
+  async updatePartnerBooth(
+    user: AuthenticatedUser,
+    exhibitionId: string,
+    boothId: string,
+    updateBoothDto: UpdateExhibitionBoothDto,
+  ) {
+    const exhibition = await this.findPartnerExhibition(user, exhibitionId);
+    this.ensurePartnerCanManageBooths(exhibition.status);
+    const booth = await this.findBoothOrThrow(exhibitionId, boothId);
+
+    if (booth.status === ExhibitionBoothStatus.BOOKED) {
+      this.ensureBookedBoothPartnerUpdateIsSafe(updateBoothDto);
+    }
+
+    const shape = updateBoothDto.shape ?? booth.shape;
+    const coordinates = updateBoothDto.coordinates;
+    if (coordinates) {
+      this.validateCoordinates(shape, coordinates);
+    }
+
+    try {
+      return await this.exhibitionsRepository.updateBooth(
+        boothId,
+        this.toBoothUpdateData(updateBoothDto),
+      );
+    } catch (error) {
+      if (this.isUniqueConstraintError(error)) {
+        throw new ConflictException('Booth code already exists');
+      }
+
+      throw error;
+    }
+  }
+
+  async deletePartnerBooth(
+    user: AuthenticatedUser,
+    exhibitionId: string,
+    boothId: string,
+  ) {
+    const exhibition = await this.findPartnerExhibition(user, exhibitionId);
+    this.ensurePartnerCanManageBooths(exhibition.status);
+    const booth = await this.findBoothOrThrow(exhibitionId, boothId);
+
+    if (booth.status === ExhibitionBoothStatus.BOOKED) {
+      throw new BadRequestException('Booked booths cannot be deleted');
+    }
+
+    await this.exhibitionsRepository.updateBooth(boothId, {
+      deletedAt: new Date(),
+    });
+
+    return { message: 'Exhibition booth deleted successfully' };
+  }
+
+  async confirmPartnerMap(user: AuthenticatedUser, id: string) {
+    const exhibition = await this.findPartnerExhibition(user, id);
+
+    if (
+      exhibition.status === ExhibitionStatus.PENDING_APPROVAL ||
+      exhibition.status === ExhibitionStatus.APPROVED ||
+      exhibition.status === ExhibitionStatus.ARCHIVED
+    ) {
+      throw new BadRequestException(
+        'Map cannot be confirmed in the current exhibition status',
+      );
+    }
+
+    if (!exhibition.mapImageUrl) {
+      throw new BadRequestException('Map image is required before confirming');
+    }
+
+    const booths =
+      await this.exhibitionsRepository.listActiveBoothsForValidation(id);
+
+    if (booths.length === 0) {
+      throw new BadRequestException('At least one booth is required');
+    }
+
+    const invalidBooth = booths.find(
+      (booth) =>
+        !booth.code ||
+        !booth.title ||
+        booth.price === null ||
+        !booth.coordinates,
+    );
+
+    if (invalidBooth) {
+      throw new BadRequestException('All booths must be complete');
+    }
+
+    return this.exhibitionsRepository.updateExhibition(id, {
+      status: ExhibitionStatus.MAP_CONFIRMED,
+      mapConfirmedAt: new Date(),
+    });
+  }
+
+  async submitPartnerExhibition(user: AuthenticatedUser, id: string) {
+    const exhibition = await this.findPartnerExhibition(user, id);
+
+    if (
+      exhibition.status !== ExhibitionStatus.MAP_CONFIRMED &&
+      exhibition.status !== ExhibitionStatus.REJECTED
+    ) {
+      throw new BadRequestException(
+        'Only confirmed or rejected exhibitions can be submitted',
+      );
+    }
+
+    if (!exhibition.mapConfirmedAt) {
+      throw new BadRequestException('Map must be confirmed before submission');
+    }
+
+    const boothsCount = await this.exhibitionsRepository.countActiveBooths(id);
+    if (boothsCount === 0) {
+      throw new BadRequestException('At least one booth is required');
+    }
+
+    const updated = await this.exhibitionsRepository.updateExhibition(id, {
+      status: ExhibitionStatus.PENDING_APPROVAL,
+      rejectionReason: null,
+      approvedAt: null,
+    });
+
+    await this.notifyExhibitionSubmitted(id);
+
+    return updated;
+  }
+
+  findAdminExhibitions(query: QueryExhibitionsDto) {
+    return this.exhibitionsRepository.paginate({
+      page: query.page,
+      limit: query.limit,
+      where: this.buildWhere(query),
+      include: this.exhibitionsRepository.listInclude(),
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async findAdminExhibition(id: string) {
+    const exhibition = await this.exhibitionsRepository.findById(id);
+
+    if (!exhibition) {
+      throw new NotFoundException('Exhibition not found');
+    }
+
+    return exhibition;
+  }
+
+  async approveExhibition(id: string) {
+    const exhibition = await this.findAdminExhibition(id);
+
+    if (exhibition.status !== ExhibitionStatus.PENDING_APPROVAL) {
+      throw new BadRequestException('Only pending exhibitions can be approved');
+    }
+
+    return this.exhibitionsRepository.updateExhibition(id, {
+      status: ExhibitionStatus.APPROVED,
+      approvedAt: new Date(),
+      rejectionReason: null,
+    });
+  }
+
+  async rejectExhibition(id: string, rejectExhibitionDto: RejectExhibitionDto) {
+    await this.findAdminExhibition(id);
+
+    return this.exhibitionsRepository.updateExhibition(id, {
+      status: ExhibitionStatus.REJECTED,
+      rejectionReason: rejectExhibitionDto.reason,
+      approvedAt: null,
+    });
+  }
+
+  async archiveExhibition(id: string) {
+    await this.findAdminExhibition(id);
+
+    return this.exhibitionsRepository.updateExhibition(id, {
+      status: ExhibitionStatus.ARCHIVED,
+    });
+  }
+
+  async uploadAdminMapFiles(id: string, request: FastifyRequest) {
+    const exhibition = await this.findAdminExhibition(id);
+
+    if (exhibition.status === ExhibitionStatus.ARCHIVED) {
+      throw new BadRequestException(
+        'Archived exhibitions cannot replace map files',
+      );
+    }
+
+    const upload = await this.parseAndStoreMapFilesUpload(request, id);
+
+    try {
+      return await this.exhibitionsRepository.updateExhibition(
+        id,
+        this.toMapFilesUpdateData(upload, exhibition.status),
+      );
+    } catch (error) {
+      await this.deleteStoredMapFiles(upload);
+      throw error;
+    }
+  }
+
+  async updateAdminBooth(
+    exhibitionId: string,
+    boothId: string,
+    updateBoothDto: UpdateExhibitionBoothDto,
+  ) {
+    await this.findAdminExhibition(exhibitionId);
+    const booth = await this.findBoothOrThrow(exhibitionId, boothId);
+    const shape = updateBoothDto.shape ?? booth.shape;
+
+    if (updateBoothDto.coordinates) {
+      this.validateCoordinates(shape, updateBoothDto.coordinates);
+    }
+
+    try {
+      return await this.exhibitionsRepository.updateBooth(
+        boothId,
+        this.toBoothUpdateData(updateBoothDto),
+      );
+    } catch (error) {
+      if (this.isUniqueConstraintError(error)) {
+        throw new ConflictException('Booth code already exists');
+      }
+
+      throw error;
+    }
+  }
+
+  findPublicExhibitions(query: QueryExhibitionsDto) {
+    return this.exhibitionsRepository.paginate({
+      page: query.page,
+      limit: query.limit,
+      where: this.buildPublicWhere(query),
+      select: this.exhibitionsRepository.publicListSelect(),
+      orderBy: [{ approvedAt: 'desc' }, { startsAt: 'asc' }],
+    });
+  }
+
+  async findPublicExhibition(slug: string) {
+    const exhibition = await this.exhibitionsRepository.findBySlug(
+      slug,
+      this.buildPublicWhere(),
+    );
+
+    if (!exhibition) {
+      throw new NotFoundException('Exhibition not found');
+    }
+
+    return exhibition;
+  }
+
+  private async getPartnerCompanyIdWithSubscription(
+    user: AuthenticatedUser,
+  ): Promise<string> {
+    const companyId = this.getPartnerCompanyId(user);
+    const subscription =
+      await this.exhibitionsRepository.findActiveExhibitionsSubscription(
+        companyId,
+      );
+
+    if (!subscription) {
+      throw new ForbiddenException(
+        'Company is not subscribed to exhibitions service',
+      );
+    }
+
+    return companyId;
+  }
+
+  private getPartnerCompanyId(user: AuthenticatedUser): string {
+    if (!user.companyId) {
+      throw new ForbiddenException(
+        'Authenticated user is not linked to a company',
+      );
+    }
+
+    return user.companyId;
+  }
+
+  private buildWhere(
+    query: QueryExhibitionsDto,
+    companyId?: string,
+  ): Prisma.ExhibitionWhereInput {
+    return {
+      deletedAt: null,
+      ...(companyId ? { companyId } : {}),
+      ...(!companyId && query.companyId ? { companyId: query.companyId } : {}),
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.city ? { city: query.city } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { title: { contains: query.search, mode: 'insensitive' } },
+              { subtitle: { contains: query.search, mode: 'insensitive' } },
+              { city: { contains: query.search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+  }
+
+  private buildPublicWhere(
+    query: QueryExhibitionsDto = new QueryExhibitionsDto(),
+  ): Prisma.ExhibitionWhereInput {
+    return {
+      status: ExhibitionStatus.APPROVED,
+      deletedAt: null,
+      company: {
+        status: 'ACTIVE',
+        deletedAt: null,
+        serviceSubscriptions: {
+          some: {
+            serviceType: ServiceType.EXHIBITIONS,
+            status: ServiceSubscriptionStatus.ACTIVE,
+          },
+        },
+      },
+      ...(query.city ? { city: query.city } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { title: { contains: query.search, mode: 'insensitive' } },
+              { subtitle: { contains: query.search, mode: 'insensitive' } },
+              { city: { contains: query.search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+  }
+
+  private buildBoothWhere(
+    exhibitionId: string,
+    query: QueryExhibitionBoothsDto,
+  ): Prisma.ExhibitionBoothWhereInput {
+    return {
+      exhibitionId,
+      deletedAt: null,
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { code: { contains: query.search, mode: 'insensitive' } },
+              { title: { contains: query.search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+  }
+
+  private async paginateBooths(
+    exhibitionId: string,
+    query: QueryExhibitionBoothsDto,
+  ) {
+    const where = this.buildBoothWhere(exhibitionId, query);
+    const skip = (query.page - 1) * query.limit;
+    const [data, total] = await Promise.all([
+      this.exhibitionsRepository.findBooths({
+        where,
+        skip,
+        take: query.limit,
+        orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }],
+      }),
+      this.exhibitionsRepository.countBooths(where),
+    ]);
+    const totalPages = Math.ceil(total / query.limit);
+
+    return {
+      data,
+      meta: {
+        page: query.page,
+        limit: query.limit,
+        total,
+        totalPages,
+        hasNextPage: query.page < totalPages,
+        hasPreviousPage: query.page > 1,
+      },
+    };
+  }
+
+  private async paginateBookingRequests(args: {
+    page?: number;
+    limit?: number;
+    where: Prisma.ExhibitionBookingRequestWhereInput;
+    include?: Prisma.ExhibitionBookingRequestInclude;
+    orderBy?: Prisma.ExhibitionBookingRequestOrderByWithRelationInput;
+  }) {
+    const page = args.page ?? 1;
+    const limit = args.limit ?? 20;
+    const skip = (page - 1) * limit;
+    const [data, total] = await Promise.all([
+      this.exhibitionsRepository.findBookingRequests({
+        where: args.where,
+        include: args.include,
+        orderBy: args.orderBy,
+        skip,
+        take: limit,
+      }),
+      this.exhibitionsRepository.countBookingRequests(args.where),
+    ]);
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      data,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1,
+      },
+    };
+  }
+
+  private async paginateBookingItems(args: {
+    page?: number;
+    limit?: number;
+    where: Prisma.ExhibitionBookingItemWhereInput;
+    select?: Prisma.ExhibitionBookingItemSelect;
+    orderBy?: Prisma.ExhibitionBookingItemOrderByWithRelationInput;
+  }) {
+    const page = args.page ?? 1;
+    const limit = args.limit ?? 20;
+    const skip = (page - 1) * limit;
+    const [data, total] = await Promise.all([
+      this.exhibitionsRepository.findBookingItems({
+        where: args.where,
+        select: args.select,
+        orderBy: args.orderBy,
+        skip,
+        take: limit,
+      }),
+      this.exhibitionsRepository.countBookingItems(args.where),
+    ]);
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      data,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1,
+      },
+    };
+  }
+
+  private buildBookingWhere(
+    query: QueryExhibitionBookingsDto,
+    customerId?: string,
+  ): Prisma.ExhibitionBookingRequestWhereInput {
+    return {
+      deletedAt: null,
+      ...(customerId ? { customerId } : {}),
+      ...(!customerId && query.customerId ? { customerId: query.customerId } : {}),
+      ...(query.companyId ? { companyId: query.companyId } : {}),
+      ...(query.exhibitionId ? { exhibitionId: query.exhibitionId } : {}),
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              {
+                customerFullName: {
+                  contains: query.search,
+                  mode: 'insensitive',
+                },
+              },
+              {
+                customerCompany: {
+                  contains: query.search,
+                  mode: 'insensitive',
+                },
+              },
+              {
+                exhibition: {
+                  title: { contains: query.search, mode: 'insensitive' },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+  }
+
+  private buildBookingItemWhere(
+    query: QueryExhibitionBookingItemsDto,
+    companyId: string,
+  ): Prisma.ExhibitionBookingItemWhereInput {
+    return {
+      bookingRequest: {
+        companyId,
+        deletedAt: null,
+        ...(query.exhibitionId ? { exhibitionId: query.exhibitionId } : {}),
+      },
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { booth: { code: { contains: query.search, mode: 'insensitive' } } },
+              { booth: { title: { contains: query.search, mode: 'insensitive' } } },
+              {
+                bookingRequest: {
+                  customerFullName: {
+                    contains: query.search,
+                    mode: 'insensitive',
+                  },
+                },
+              },
+              {
+                bookingRequest: {
+                  exhibition: {
+                    title: { contains: query.search, mode: 'insensitive' },
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+  }
+
+  private async syncExhibitionBookingStatus(bookingRequestId: string) {
+    const items =
+      await this.exhibitionsRepository.listBookingItemStatuses(
+        bookingRequestId,
+      );
+    const statuses = items.map((item) => item.status);
+    const all = (status: ExhibitionBookingItemStatus) =>
+      statuses.length > 0 &&
+      statuses.every((itemStatus) => itemStatus === status);
+    const has = (status: ExhibitionBookingItemStatus) =>
+      statuses.includes(status);
+    let status: ExhibitionBookingRequestStatus =
+      ExhibitionBookingRequestStatus.PENDING_REVIEW;
+
+    if (all(ExhibitionBookingItemStatus.APPROVED)) {
+      status = ExhibitionBookingRequestStatus.APPROVED;
+    } else if (all(ExhibitionBookingItemStatus.REJECTED)) {
+      status = ExhibitionBookingRequestStatus.REJECTED;
+    } else if (all(ExhibitionBookingItemStatus.CANCELLED)) {
+      status = ExhibitionBookingRequestStatus.CANCELLED;
+    } else if (
+      has(ExhibitionBookingItemStatus.REJECTED) ||
+      (has(ExhibitionBookingItemStatus.APPROVED) &&
+        has(ExhibitionBookingItemStatus.REJECTED))
+    ) {
+      status = ExhibitionBookingRequestStatus.PARTIALLY_REJECTED;
+    } else if (
+      has(ExhibitionBookingItemStatus.APPROVED) &&
+      (has(ExhibitionBookingItemStatus.PENDING) ||
+        has(ExhibitionBookingItemStatus.CANCELLED))
+    ) {
+      status = ExhibitionBookingRequestStatus.PARTIALLY_APPROVED;
+    }
+
+    await this.exhibitionsRepository.updateBookingRequestStatus(
+      bookingRequestId,
+      status,
+    );
+
+    return status;
+  }
+
+  private async findBoothOrThrow(exhibitionId: string, boothId: string) {
+    const booth = await this.exhibitionsRepository.findBoothById(
+      boothId,
+      exhibitionId,
+    );
+
+    if (!booth) {
+      throw new NotFoundException('Exhibition booth not found');
+    }
+
+    return booth;
+  }
+
+  private ensurePartnerCanManageBooths(status: ExhibitionStatus): void {
+    if (
+      status === ExhibitionStatus.APPROVED ||
+      status === ExhibitionStatus.ARCHIVED
+    ) {
+      throw new BadRequestException(
+        'Booths cannot be managed after approval or archival',
+      );
+    }
+  }
+
+  private ensureBookedBoothPartnerUpdateIsSafe(
+    updateBoothDto: UpdateExhibitionBoothDto,
+  ): void {
+    if (
+      updateBoothDto.price !== undefined ||
+      updateBoothDto.coordinates !== undefined ||
+      updateBoothDto.shape !== undefined ||
+      updateBoothDto.status !== undefined ||
+      updateBoothDto.code !== undefined
+    ) {
+      throw new BadRequestException(
+        'Booked booth price, map geometry, code, and status cannot be changed by partners',
+      );
+    }
+  }
+
+  private validateCoordinates(
+    shape: ExhibitionMapShape,
+    coordinates: { x: number; y: number }[],
+  ): void {
+    if (!Array.isArray(coordinates)) {
+      throw new BadRequestException('coordinates must be an array');
+    }
+
+    for (const point of coordinates) {
+      if (
+        typeof point.x !== 'number' ||
+        typeof point.y !== 'number' ||
+        point.x < 0 ||
+        point.x > 100 ||
+        point.y < 0 ||
+        point.y > 100
+      ) {
+        throw new BadRequestException(
+          'coordinates x/y values must be numbers between 0 and 100',
+        );
+      }
+    }
+
+    if (
+      shape === ExhibitionMapShape.RECTANGLE &&
+      coordinates.length !== 2
+    ) {
+      throw new BadRequestException('RECTANGLE coordinates require 2 points');
+    }
+
+    if (shape === ExhibitionMapShape.POLYGON && coordinates.length < 3) {
+      throw new BadRequestException(
+        'POLYGON coordinates require at least 3 points',
+      );
+    }
+  }
+
+  private toBoothUpdateData(
+    updateBoothDto: UpdateExhibitionBoothDto,
+  ): Prisma.ExhibitionBoothUpdateInput {
+    return {
+      code: updateBoothDto.code,
+      title: updateBoothDto.title,
+      description: updateBoothDto.description,
+      price: updateBoothDto.price,
+      currency: updateBoothDto.currency,
+      status: updateBoothDto.status,
+      shape: updateBoothDto.shape,
+      coordinates: updateBoothDto.coordinates
+        ? (updateBoothDto.coordinates as unknown as Prisma.InputJsonValue)
+        : undefined,
+      color: updateBoothDto.color,
+      area: updateBoothDto.area,
+      sortOrder: updateBoothDto.sortOrder,
+    };
+  }
+
+  private toExhibitionData(
+    dto: CreateExhibitionDto | UpdateExhibitionDto,
+  ): {
+    data: Partial<Omit<
+      Prisma.ExhibitionUncheckedCreateInput,
+      'companyId' | 'slug' | 'status'
+    >>;
+    content: ExhibitionContentInput;
+  } {
+    return {
+      data: {
+        title: dto.title,
+        subtitle: dto.subtitle,
+        description: dto.description,
+        heroImageUrl: dto.heroImageUrl,
+        visitorCount: dto.visitorCount,
+        participantCount: dto.participantCount,
+        participationDays: dto.participationDays,
+        startsAt: dto.startsAt,
+        endsAt: dto.endsAt,
+        venueName: dto.venueName,
+        country: dto.country,
+        province: dto.province,
+        city: dto.city,
+        addressText: dto.addressText,
+      },
+      content: {
+        aboutCards: dto.aboutCards?.map((item) => ({
+          title: item.title,
+          text: item.text,
+          imageUrl: item.imageUrl,
+          sortOrder: item.sortOrder ?? 0,
+        })),
+        sectors: dto.sectors?.map((item) => ({
+          title: item.title,
+          text: item.text,
+          imageUrl: item.imageUrl,
+          bullets: item.bullets as Prisma.InputJsonValue,
+          sortOrder: item.sortOrder ?? 0,
+        })),
+        participationFeatures: dto.participationFeatures?.map((item) => ({
+          title: item.title,
+          text: item.text,
+          imageUrl: item.imageUrl,
+          sortOrder: item.sortOrder ?? 0,
+        })),
+      },
+    };
+  }
+
+  private async generateUniqueSlug(title: string): Promise<string> {
+    const baseSlug = this.slugify(title) || 'exhibition';
+    let slug = baseSlug;
+    let suffix = 1;
+
+    while (await this.exhibitionsRepository.findSlug(slug)) {
+      suffix += 1;
+      slug = `${baseSlug}-${suffix}`;
+    }
+
+    return slug;
+  }
+
+  private slugify(value: string): string {
+    return value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+
+  private async parseAndStoreMapFilesUpload(
+    request: FastifyRequest,
+    exhibitionId: string,
+  ): Promise<ParsedMapFilesUpload> {
+    const multipartRequest = request as MultipartFastifyRequest;
+
+    if (!multipartRequest.isMultipart()) {
+      throw new BadRequestException('Request must be multipart/form-data');
+    }
+
+    const maxUploadSizeMb =
+      this.configService.getOrThrow<number>('maxUploadSizeMb');
+    const upload: ParsedMapFilesUpload = {};
+
+    try {
+      for await (const part of multipartRequest.parts({
+        limits: {
+          fileSize: maxUploadSizeMb * 1024 * 1024,
+          files: 2,
+          fields: 0,
+          parts: 2,
+        },
+      })) {
+        if (part.type !== 'file') {
+          throw new BadRequestException('Only map files are accepted');
+        }
+
+        if (part.fieldname === 'mapImage') {
+          if (upload.mapImage) {
+            throw new BadRequestException('Only one mapImage file is allowed');
+          }
+
+          upload.mapImage = await this.storeMapImage(part, exhibitionId);
+          continue;
+        }
+
+        if (part.fieldname === 'mapPdf') {
+          if (upload.mapPdf) {
+            throw new BadRequestException('Only one mapPdf file is allowed');
+          }
+
+          upload.mapPdf = await this.storeMapPdf(part, exhibitionId);
+          continue;
+        }
+
+        throw new BadRequestException(
+          'File fields must be named mapImage or mapPdf',
+        );
+      }
+    } catch (error) {
+      await this.deleteStoredMapFiles(upload);
+
+      if (this.isMultipartFileTooLargeError(error)) {
+        throw new BadRequestException(
+          `File size must not exceed ${maxUploadSizeMb}MB`,
+        );
+      }
+
+      throw error;
+    }
+
+    if (!upload.mapImage && !upload.mapPdf) {
+      throw new BadRequestException('At least one map file is required');
+    }
+
+    return upload;
+  }
+
+  private toMapFilesUpdateData(
+    upload: ParsedMapFilesUpload,
+    status: ExhibitionStatus,
+  ): Prisma.ExhibitionUpdateInput {
+    const data: Prisma.ExhibitionUpdateInput = {};
+
+    if (upload.mapImage?.url) {
+      data.mapImageUrl = upload.mapImage.url;
+    }
+
+    if (upload.mapPdf?.url) {
+      data.mapPdfUrl = upload.mapPdf.url;
+    }
+
+    if (!data.mapImageUrl && !data.mapPdfUrl) {
+      throw new BadRequestException(
+        'No valid map files received. Use multipart file fields mapImage and/or mapPdf.',
+      );
+    }
+
+    if (status === ExhibitionStatus.DRAFT) {
+      data.status = ExhibitionStatus.MAP_IN_PROGRESS;
+    }
+
+    return data;
+  }
+
+  private storeMapImage(file: MultipartFile, exhibitionId: string) {
+    const extension = ALLOWED_MAP_IMAGE_MIME_TYPES.get(file.mimetype);
+
+    if (!extension) {
+      throw new BadRequestException(
+        'mapImage must be a JPEG, PNG, or WebP image',
+      );
+    }
+
+    return this.storeMultipartMapFile(file, exhibitionId, extension);
+  }
+
+  private storeMapPdf(file: MultipartFile, exhibitionId: string) {
+    if (file.mimetype !== MAP_PDF_MIME_TYPE) {
+      throw new BadRequestException('mapPdf must be an application/pdf file');
+    }
+
+    return this.storeMultipartMapFile(file, exhibitionId, '.pdf');
+  }
+
+  private async storeMultipartMapFile(
+    file: MultipartFile,
+    exhibitionId: string,
+    extension: string,
+  ): Promise<StoredMapFile> {
+    const uploadRoot = this.configService.getOrThrow<string>('uploadRoot');
+    const publicBaseUrl =
+      this.configService.getOrThrow<string>('publicBaseUrl');
+    const uploadDir = resolve(
+      process.cwd(),
+      uploadRoot,
+      EXHIBITION_MAP_UPLOAD_DIR,
+    );
+    const filename = `${exhibitionId}-${Date.now()}-${randomUUID()}${extension}`;
+    const filePath = join(uploadDir, filename);
+
+    await mkdir(uploadDir, { recursive: true });
+    await pipeline(file.file, createWriteStream(filePath));
+
+    if (file.file.truncated) {
+      await this.deleteStoredFile(filePath);
+      throw new BadRequestException(
+        `File size must not exceed ${this.configService.getOrThrow<number>(
+          'maxUploadSizeMb',
+        )}MB`,
+      );
+    }
+
+    const publicPath = `${uploadRoot}/${EXHIBITION_MAP_UPLOAD_DIR.replace(/\\/g, '/')}/${filename}`;
+
+    return {
+      filePath,
+      url: `${publicBaseUrl.replace(/\/$/, '')}/${publicPath}`,
+    };
+  }
+
+  private async deleteStoredMapFiles(
+    upload: ParsedMapFilesUpload,
+  ): Promise<void> {
+    await Promise.all([
+      upload.mapImage ? this.deleteStoredFile(upload.mapImage.filePath) : null,
+      upload.mapPdf ? this.deleteStoredFile(upload.mapPdf.filePath) : null,
+    ]);
+  }
+
+  private async deleteStoredFile(filePath: string): Promise<void> {
+    try {
+      await unlink(filePath);
+    } catch {
+      // Best-effort cleanup for partially handled uploads.
+    }
+  }
+
+  private isMultipartFileTooLargeError(error: unknown): boolean {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      error.code === 'FST_REQ_FILE_TOO_LARGE'
+    );
+  }
+
+  private ensureCustomer(user: AuthenticatedUser): void {
+    if (user.role !== 'CUSTOMER') {
+      throw new ForbiddenException(
+        'Only customers can manage exhibition bookings',
+      );
+    }
+  }
+
+  private notifyExhibitionSubmitted(exhibitionId: string) {
+    return this.notificationsService.create({
+      role: UserRole.SUPER_ADMIN,
+      type: NotificationType.SYSTEM,
+      title: 'Exhibition submitted for approval',
+      message: 'An exhibition was submitted for approval.',
+      entityType: 'EXHIBITION',
+      entityId: exhibitionId,
+    });
+  }
+
+  private notifyExhibitionBookingCreated(
+    bookingRequestId: string,
+    companyId: string,
+  ) {
+    return this.notificationsService.create({
+      companyId,
+      type: NotificationType.BOOKING_REQUEST_CREATED,
+      title: 'New exhibition booth booking',
+      message: 'A customer created an exhibition booth booking request.',
+      entityType: 'EXHIBITION_BOOKING_REQUEST',
+      entityId: bookingRequestId,
+    });
+  }
+
+  private notifyExhibitionBookingItemStatusChanged(
+    customerId: string,
+    bookingItemId: string,
+    title: string,
+    message: string,
+  ) {
+    return this.notificationsService.create({
+      userId: customerId,
+      type: NotificationType.BOOKING_REQUEST_STATUS_CHANGED,
+      title,
+      message,
+      entityType: 'EXHIBITION_BOOKING_ITEM',
+      entityId: bookingItemId,
+    });
+  }
+
+  private notifyExhibitionBookingFullyApproved(
+    customerId: string,
+    bookingRequestId: string,
+  ) {
+    return this.notificationsService.create({
+      userId: customerId,
+      type: NotificationType.BOOKING_REQUEST_STATUS_CHANGED,
+      title: 'Exhibition booking approved',
+      message: 'All items in your exhibition booking request were approved.',
+      entityType: 'EXHIBITION_BOOKING_REQUEST',
+      entityId: bookingRequestId,
+    });
+  }
+
+  private isUniqueConstraintError(error: unknown): boolean {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    );
+  }
+}

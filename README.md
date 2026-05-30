@@ -2,7 +2,7 @@
 
 Sila is a modular monolith marketplace backend built with NestJS, Fastify, PostgreSQL, and Prisma. The platform connects customers with service providers through Sila, without direct customer-to-provider communication.
 
-The first implemented service domain is Billboards / Outdoor Advertising. The architecture is prepared for future service domains such as freelancers, marketing, exhibitions, and other marketplace verticals.
+Implemented service domains include Billboards / Outdoor Advertising and Exhibitions. The architecture is prepared for future service domains such as freelancers, marketing, and other marketplace verticals.
 
 ## Tech Stack
 
@@ -14,7 +14,7 @@ The first implemented service domain is Billboards / Outdoor Advertising. The ar
 - JWT authentication
 - Role-based access control
 - Postman collection and environment
-- Local file uploads for billboard images
+- Local file uploads for billboard images and exhibition maps
 
 ## Architecture Overview
 
@@ -29,6 +29,7 @@ Sila is organized as a clean, modular monolith that can be split into services l
 - `src/shared/common`: common DTOs, interceptors, filters, and response utilities.
 - `src/services`: business service domains.
 - `src/services/billboards`: Billboards / Outdoor Advertising domain.
+- `src/services/exhibitions`: Exhibitions domain with map-based booth management and booth booking requests.
 
 The backend follows a Controller + Service + Repository pattern. Repositories can extend the shared `BaseRepository` for common Prisma operations.
 
@@ -165,15 +166,15 @@ Expected response shape:
 
 `SUPER_ADMIN`
 
-Platform admin. Can manage companies, users, billboards, road packages, offers, and notifications. Booking access is monitoring-only.
+Platform admin. Can manage companies, users, billboards, road packages, offers, exhibitions, and notifications. Booking access is monitoring-only.
 
 `COMPANY_ADMIN`
 
-Partner/company user. Can manage only their own company billboards, road packages, offers, billboard media, unavailable periods, and approve or reject booking items assigned to their company.
+Partner/company user. Can manage only their own company billboards, road packages, offers, exhibitions, billboard media, exhibition maps, unavailable periods, booths, and approve or reject booking items assigned to their company.
 
 `CUSTOMER`
 
-Customer user. Can browse public billboards and offers, check availability, create multi-item booking requests, view their own bookings, and manage their own profile.
+Customer user. Can browse public billboards, offers, and exhibitions, check availability, create multi-item booking requests, book exhibition booths, view their own bookings, and manage their own profile.
 
 ## Main API Groups
 
@@ -184,6 +185,12 @@ Customer user. Can browse public billboards and offers, check availability, crea
 - Admin Billboards
 - Public Billboards
 - Public Offers
+- Partner Exhibitions
+- Admin Exhibitions
+- Public Exhibitions
+- Customer Exhibition Bookings
+- Partner Exhibition Booking Items
+- Admin Exhibition Bookings
 - Availability
 - Customer Bookings
 - Partner Booking Items
@@ -220,11 +227,18 @@ Recommended testing flow:
 10. Register Customer
 11. Check Availability
 12. Create Customer Booking
-13. Partner Approve/Reject Booking Items
-14. Admin Monitor Bookings
-15. Notifications
+13. Create Exhibition
+14. Upload Exhibition Map
+15. Create Exhibition Booth
+16. Confirm Map and Submit Exhibition
+17. Admin Approve Exhibition
+18. Public Exhibition Browsing
+19. Create Customer Exhibition Booking
+20. Partner Approve/Reject Booking Items
+21. Admin Monitor Bookings
+22. Notifications
 
-The Postman collection stores common IDs and tokens automatically when possible, including access tokens, refresh tokens, company IDs, billboard IDs, media IDs, booking request IDs, and notification IDs.
+The Postman collection stores common IDs and tokens automatically when possible, including access tokens, refresh tokens, company IDs, billboard IDs, exhibition IDs, exhibition booth IDs, booking request IDs, exhibition booking IDs, and notification IDs.
 
 ## Media Uploads
 
@@ -272,17 +286,39 @@ http://localhost:3000/uploads/billboards/<filename>
 
 Uploaded files are ignored by Git. Placeholder `.gitkeep` files keep the upload directories present in the repository.
 
+## Exhibitions
+
+The Exhibitions service lets partner companies create exhibitions, upload a plan/map image or PDF, place booth shapes on top of the map, and submit the exhibition for super-admin approval.
+
+Exhibition map files support URL-based fields and local Fastify multipart upload. Local map files are stored under:
+
+```text
+uploads/exhibitions/maps
+```
+
+Public map file URL format:
+
+```text
+http://localhost:3000/uploads/exhibitions/maps/<filename>
+```
+
+Interactive map booth coordinates are stored as percentage-based JSON points. The frontend can draw `RECTANGLE` or `POLYGON` booth shapes over the map using those coordinates.
+
+Exhibition booth booking is request-based. Customers can request one or many available booths from an approved public exhibition. Partner companies approve or reject individual booth booking items; approval marks the booth as `BOOKED`, while rejection keeps it `AVAILABLE`. Admin exhibition booking endpoints are monitoring-only.
+
 ## Booking Notes
 
 - Booking does not include payment yet.
 - Booking is request-based, not direct payment booking.
 - Customer bookings can contain individual billboards, road packages, and offers.
+- Customer exhibition bookings can contain one or many exhibition booths.
 - Partner companies approve or reject only their own booking items.
 - Admin booking endpoints are monitoring-only.
 - Public billboard browsing is open.
 - Creating bookings requires authenticated `CUSTOMER` access.
 - Approved booking items and unavailable periods block future availability.
 - Partners cannot see customer email or phone in partner booking item responses.
+- Exhibition partner booking item responses also hide customer email and phone.
 
 ## Useful Scripts
 
@@ -370,11 +406,12 @@ Make sure the server is running and the file exists under:
 
 ```text
 uploads/billboards
+uploads/exhibitions/maps
 ```
 
 ## Project Status
 
-Implemented foundation includes authentication, RBAC, companies, company admin users, billboard management, media, public browsing, availability, customer booking requests, and internal notifications.
+Implemented foundation includes authentication, RBAC, companies, company admin users, billboard management, exhibition management, media/map uploads, public browsing, availability, customer booking requests, booth booking requests, and internal notifications.
 
 Not implemented yet:
 
@@ -382,4 +419,4 @@ Not implemented yet:
 - Email/SMS notifications
 - S3/MinIO storage
 - Public provider contact
-- Additional service domains beyond billboards
+- Additional service domains beyond billboards and exhibitions
