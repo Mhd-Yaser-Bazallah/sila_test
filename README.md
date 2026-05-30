@@ -302,6 +302,16 @@ Public map file URL format:
 http://localhost:3000/uploads/exhibitions/maps/<filename>
 ```
 
+Public approved exhibition maps can also be requested through explicit download endpoints:
+
+```text
+GET /api/v1/public/exhibitions/:slug/map/image
+GET /api/v1/public/exhibitions/:slug/map/pdf
+GET /api/v1/public/exhibitions/:slug/map/download
+```
+
+Use `/map/image` when the frontend needs an image for interactive booth overlays, `/map/pdf` when the UI needs the PDF version, and `/map/download` for a general download/open action. The general endpoint redirects to the PDF when available, otherwise to the image. These endpoints are public but only work for approved, non-deleted exhibitions owned by active companies with an active Exhibitions subscription.
+
 Interactive map booth coordinates are stored as percentage-based JSON points. The frontend can draw `RECTANGLE` or `POLYGON` booth shapes over the map using those coordinates.
 
 Exhibition booth booking is request-based. Customers can request one or many available booths from an approved public exhibition. Partner companies approve or reject individual booth booking items; approval marks the booth as `BOOKED`, while rejection keeps it `AVAILABLE`. Admin exhibition booking endpoints are monitoring-only.

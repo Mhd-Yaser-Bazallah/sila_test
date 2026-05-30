@@ -803,6 +803,37 @@ export class ExhibitionsService {
     return exhibition;
   }
 
+  async findPublicExhibitionMapImageUrl(slug: string): Promise<string> {
+    const exhibition = await this.findPublicExhibition(slug);
+
+    if (!exhibition.mapImageUrl) {
+      throw new NotFoundException('Exhibition map image not found');
+    }
+
+    return exhibition.mapImageUrl;
+  }
+
+  async findPublicExhibitionMapPdfUrl(slug: string): Promise<string> {
+    const exhibition = await this.findPublicExhibition(slug);
+
+    if (!exhibition.mapPdfUrl) {
+      throw new NotFoundException('Exhibition map PDF not found');
+    }
+
+    return exhibition.mapPdfUrl;
+  }
+
+  async findPublicExhibitionMapDownloadUrl(slug: string): Promise<string> {
+    const exhibition = await this.findPublicExhibition(slug);
+    const url = exhibition.mapPdfUrl ?? exhibition.mapImageUrl;
+
+    if (!url) {
+      throw new NotFoundException('Exhibition map not found');
+    }
+
+    return url;
+  }
+
   private async getPartnerCompanyIdWithSubscription(
     user: AuthenticatedUser,
   ): Promise<string> {

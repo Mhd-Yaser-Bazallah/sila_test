@@ -1,0 +1,62 @@
+[33mcommit 9738efd8789eb99c2dee1101ed701345a92c002f[m[33m ([m[1;31morigin/master[m[33m, [m[1;32minspect-master[m[33m)[m
+Author: MoShero-13 <mo3206213@gmail.com>
+Date:   Mon May 25 14:29:46 2026 +0300
+
+    hello i'm samer
+
+ .env.example                                       |   12 [32m+[m
+ .gitignore                                         |   64 [32m+[m
+ .prettierrc                                        |    4 [32m+[m
+ README.md                                          |  385 [32m+[m
+ eslint.config.mjs                                  |   35 [32m+[m
+ nest-cli.json                                      |    8 [32m+[m
+ package.json                                       |   89 [32m+[m
+ pnpm-lock.yaml                                     | 7495 [32m++++++++++++++++++++[m
+ postman/sila-api.postman_collection.json           |  812 [32m+++[m
+ postman/sila-local.postman_environment.json        |   24 [32m+[m
+ prisma.config.ts                                   |   14 [32m+[m
+ .../20260508000000_init_core_schema/migration.sql  |  231 [32m+[m
+ .../migration.sql                                  |    8 [32m+[m
+ .../20260508000002_add_notifications/migration.sql |   36 [32m+[m
+ .../migration.sql                                  |  222 [32m+[m
+ .../migration.sql                                  |    3 [32m+[m
+ .../migration.sql                                  |   30 [32m+[m
+ .../migration.sql                                  |    8 [32m+[m
+ prisma/migrations/migration_lock.toml              |    3 [32m+[m
+ prisma/schema.prisma                               |  423 [32m++[m
+ scripts/seed.ts                                    |   57 [32m+[m
+ src/app.module.ts                                  |   23 [32m+[m
+ src/main.ts                                        |   68 [32m+[m
+ src/services/billboards/.gitkeep                   |    1 [32m+[m
+ .../billboards/admin-billboards.controller.ts      |   61 [32m+[m
+ .../admin-booking-requests.controller.ts           |   22 [32m+[m
+ src/services/billboards/admin-offers.controller.ts |   37 [32m+[m
+ .../admin-road-billboard-packages.controller.ts    |   37 [32m+[m
+ src/services/billboards/billboards.module.ts       |   38 [32m+[m
+ src/services/billboards/billboards.repository.ts   |  997 [32m+++[m
+ src/services/billboards/billboards.service.ts      | 2922 [32m++++++++[m
+ .../customer-booking-requests.controller.ts        |   86 [32m+[m
+ .../billboards/dto/add-billboard-media.dto.ts      |   29 [32m+[m
+ .../billboards/dto/approve-billboard.dto.ts        |    1 [32m+[m
+ .../dto/billboard-business-rules.validator.ts      |   49 [32m+[m
+ .../billboards/dto/check-availability.dto.ts       |   12 [32m+[m
+ .../billboards/dto/create-billboard.dto.ts         |  101 [32m+[m
+ .../billboards/dto/create-booking-request.dto.ts   |   20 [32m+[m
+ .../dto/create-multi-booking-request.dto.ts        |   66 [32m+[m
+ src/services/billboards/dto/create-offer.dto.ts    |   47 [32m+[m
+ .../dto/create-road-billboard-package.dto.ts       |  155 [32m+[m
+ .../dto/create-unavailable-period.dto.ts           |   16 [32m+[m
+ .../billboards/dto/public-query-billboards.dto.ts  |  104 [32m+[m
+ .../billboards/dto/query-billboards.dto.ts         |   46 [32m+[m
+ .../billboards/dto/query-booking-items.dto.ts      |   26 [32m+[m
+ .../billboards/dto/query-booking-requests.dto.ts   |   34 [32m+[m
+ src/services/billboards/dto/query-offers.dto.ts    |   44 [32m+[m
+ .../dto/query-road-billboard-packages.dto.ts       |   42 [32m+[m
+ .../billboards/dto/reject-billboard.dto.ts         |    7 [32m+[m
+ .../billboards/dto/update-billboard-media.dto.ts   |   18 [32m+[m
+ .../billboards/dto/update-billboard.dto.ts         |  106 [32m+[m
+ .../dto/update-booking-item-status.dto.ts          |    7 [32m+[m
+ .../dto/update-booking-request-status.dto.ts       |   15 [32m+[m
+ src/services/billboards/dto/update-offer.dto.ts    |   47 [32m+[m
+ .../dto/update-road-billboard-package.dto.ts       |   22 [32m+[m
+ .../dto/update-unavailable-period.d

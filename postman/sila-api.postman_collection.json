@@ -847,7 +847,10 @@
       "name": "Public Exhibitions",
       "item": [
         { "name": "List Public Exhibitions", "request": { "method": "GET", "header": [], "url": "{{base_url}}/public/exhibitions?page=1&limit=20" } },
-        { "name": "Get Public Exhibition", "request": { "method": "GET", "header": [], "url": "{{base_url}}/public/exhibitions/{{exhibition_slug}}" } }
+        { "name": "Get Public Exhibition", "request": { "method": "GET", "header": [], "url": "{{base_url}}/public/exhibitions/{{exhibition_slug}}" } },
+        { "name": "Download Map Image", "request": { "method": "GET", "header": [], "url": "{{base_url}}/public/exhibitions/{{exhibition_slug}}/map/image" } },
+        { "name": "Download Map PDF", "request": { "method": "GET", "header": [], "url": "{{base_url}}/public/exhibitions/{{exhibition_slug}}/map/pdf" } },
+        { "name": "Download Map", "request": { "method": "GET", "header": [], "url": "{{base_url}}/public/exhibitions/{{exhibition_slug}}/map/download" } }
       ]
     },
     {
