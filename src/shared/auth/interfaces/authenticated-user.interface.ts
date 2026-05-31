@@ -8,4 +8,13 @@ export interface AuthenticatedUser {
   role: Role;
   status: string;
   companyId: string | null;
+  company?: {
+    id: string;
+    name: string;
+    status: string;
+    serviceSubscriptions?: {
+      serviceType: string;
+      status: string;
+    }[];
+  } | null;
 }

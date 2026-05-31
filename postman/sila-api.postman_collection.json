@@ -734,7 +734,8 @@
                 "exec": [
                   "const data = pm.response.json().data;",
                   "if (data && data.id) pm.environment.set('exhibition_id', data.id);",
-                  "if (data && data.slug) pm.environment.set('exhibition_slug', data.slug);"
+                  "if (data && data.slug) pm.environment.set('exhibition_slug', data.slug);",
+                  "if (data && data.sectors && data.sectors.length > 0) pm.environment.set('exhibition_sector_id', data.sectors[0].id);"
                 ],
                 "type": "text/javascript"
               }
@@ -807,11 +808,12 @@
             "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] },
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"code\": \"A-01\",\n  \"title\": \"Booth A-01\",\n  \"description\": \"Near main entrance\",\n  \"price\": 500,\n  \"currency\": \"USD\",\n  \"status\": \"AVAILABLE\",\n  \"shape\": \"POLYGON\",\n  \"coordinates\": [\n    { \"x\": 12.5, \"y\": 20.3 },\n    { \"x\": 18.7, \"y\": 20.3 },\n    { \"x\": 18.7, \"y\": 28.1 },\n    { \"x\": 12.5, \"y\": 28.1 }\n  ],\n  \"color\": \"#FFCC00\",\n  \"area\": \"12 sqm\",\n  \"sortOrder\": 0\n}" },
+            "body": { "mode": "raw", "raw": "{\n  \"sectorId\": \"{{exhibition_sector_id}}\",\n  \"code\": \"A-01\",\n  \"title\": \"Booth A-01\",\n  \"description\": \"Near main entrance\",\n  \"price\": 500,\n  \"currency\": \"USD\",\n  \"status\": \"AVAILABLE\",\n  \"shape\": \"POLYGON\",\n  \"coordinates\": [\n    { \"x\": 12.5, \"y\": 20.3 },\n    { \"x\": 18.7, \"y\": 20.3 },\n    { \"x\": 18.7, \"y\": 28.1 },\n    { \"x\": 12.5, \"y\": 28.1 }\n  ],\n  \"color\": \"#FFCC00\",\n  \"area\": \"12 sqm\",\n  \"sortOrder\": 0\n}" },
             "url": "{{base_url}}/partner/exhibitions/{{exhibition_id}}/booths"
           }
         },
-        { "name": "List Booths", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": "{{base_url}}/partner/exhibitions/{{exhibition_id}}/booths?page=1&limit=20" } },
+        { "name": "List Booths", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": "{{base_url}}/partner/exhibitions/{{exhibition_id}}/booths?page=1&limit=20&sectorId={{exhibition_sector_id}}" } },
+        { "name": "Update Booth", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] }, "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"sectorId\": \"{{exhibition_sector_id}}\",\n  \"color\": \"#33AAFF\",\n  \"area\": \"12 sqm\"\n}" }, "url": "{{base_url}}/partner/exhibitions/{{exhibition_id}}/booths/{{exhibition_booth_id}}" } },
         { "name": "Confirm Map", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] }, "method": "PATCH", "header": [], "url": "{{base_url}}/partner/exhibitions/{{exhibition_id}}/confirm-map" } },
         { "name": "Submit Exhibition", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] }, "method": "PATCH", "header": [], "url": "{{base_url}}/partner/exhibitions/{{exhibition_id}}/submit" } }
       ]
@@ -840,7 +842,26 @@
             "url": "{{base_url}}/admin/exhibitions/{{exhibition_id}}/map-files/upload"
           }
         },
-        { "name": "Admin Update Booth", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] }, "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"color\": \"#33AAFF\",\n  \"area\": \"12 sqm\"\n}" }, "url": "{{base_url}}/admin/exhibitions/{{exhibition_id}}/booths/{{exhibition_booth_id}}" } }
+        {
+          "name": "Admin Create Booth",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const data = pm.response.json().data;",
+                  "if (data && data.id) pm.environment.set('exhibition_booth_id', data.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] }, "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"sectorId\": \"{{exhibition_sector_id}}\",\n  \"code\": \"A-02\",\n  \"title\": \"Booth A-02\",\n  \"description\": \"Admin-created booth\",\n  \"price\": 650,\n  \"currency\": \"USD\",\n  \"status\": \"AVAILABLE\",\n  \"shape\": \"RECTANGLE\",\n  \"coordinates\": [\n    { \"x\": 22.5, \"y\": 20.3 },\n    { \"x\": 28.7, \"y\": 28.1 }\n  ],\n  \"color\": \"#33AAFF\",\n  \"area\": \"14 sqm\",\n  \"sortOrder\": 1\n}" }, "url": "{{base_url}}/admin/exhibitions/{{exhibition_id}}/booths" }
+        },
+        { "name": "Admin List Booths", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": "{{base_url}}/admin/exhibitions/{{exhibition_id}}/booths?page=1&limit=20&sectorId={{exhibition_sector_id}}" } },
+        { "name": "Admin Get Booth", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": "{{base_url}}/admin/exhibitions/{{exhibition_id}}/booths/{{exhibition_booth_id}}" } },
+        { "name": "Admin Update Booth", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] }, "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"sectorId\": \"{{exhibition_sector_id}}\",\n  \"color\": \"#33AAFF\",\n  \"area\": \"12 sqm\"\n}" }, "url": "{{base_url}}/admin/exhibitions/{{exhibition_id}}/booths/{{exhibition_booth_id}}" } },
+        { "name": "Admin Delete Booth", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] }, "method": "DELETE", "header": [], "url": "{{base_url}}/admin/exhibitions/{{exhibition_id}}/booths/{{exhibition_booth_id}}" } }
       ]
     },
     {

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -11,6 +12,8 @@ import {
 import type { FastifyRequest } from 'fastify';
 import { Auth } from '../../shared/auth/decorators/auth.decorator';
 import { Role } from '../../shared/auth/enums/role.enum';
+import { CreateExhibitionBoothDto } from './dto/create-exhibition-booth.dto';
+import { QueryExhibitionBoothsDto } from './dto/query-exhibition-booths.dto';
 import { QueryExhibitionsDto } from './dto/query-exhibitions.dto';
 import { RejectExhibitionDto } from './dto/reject-exhibition.dto';
 import { UpdateExhibitionBoothDto } from './dto/update-exhibition-booth.dto';
@@ -54,6 +57,30 @@ export class AdminExhibitionsController {
     return this.exhibitionsService.uploadAdminMapFiles(id, request);
   }
 
+  @Post(':id/booths')
+  createBooth(
+    @Param('id') id: string,
+    @Body() createBoothDto: CreateExhibitionBoothDto,
+  ) {
+    return this.exhibitionsService.createAdminBooth(id, createBoothDto);
+  }
+
+  @Get(':id/booths')
+  findBooths(
+    @Param('id') id: string,
+    @Query() query: QueryExhibitionBoothsDto,
+  ) {
+    return this.exhibitionsService.findAdminBooths(id, query);
+  }
+
+  @Get(':id/booths/:boothId')
+  findBooth(
+    @Param('id') id: string,
+    @Param('boothId') boothId: string,
+  ) {
+    return this.exhibitionsService.findAdminBooth(id, boothId);
+  }
+
   @Patch(':id/booths/:boothId')
   updateBooth(
     @Param('id') id: string,
@@ -65,5 +92,13 @@ export class AdminExhibitionsController {
       boothId,
       updateBoothDto,
     );
+  }
+
+  @Delete(':id/booths/:boothId')
+  deleteBooth(
+    @Param('id') id: string,
+    @Param('boothId') boothId: string,
+  ) {
+    return this.exhibitionsService.deleteAdminBooth(id, boothId);
   }
 }

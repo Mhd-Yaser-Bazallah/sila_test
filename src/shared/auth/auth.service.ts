@@ -113,8 +113,14 @@ export class AuthService {
     return { message: 'Logged out successfully' };
   }
 
-  getMe(user: AuthenticatedUser): AuthenticatedUser {
-    return user;
+  async getMe(user: AuthenticatedUser): Promise<AuthenticatedUser> {
+    const activeUser = await this.findActiveUser(user.id);
+
+    if (!activeUser) {
+      throw new UnauthorizedException('Invalid access token');
+    }
+
+    return this.toAuthenticatedUser(activeUser);
   }
 
   private async validateCredentials(
@@ -125,6 +131,21 @@ export class AuthService {
         email: loginDto.email.toLowerCase(),
         deletedAt: null,
         status: 'ACTIVE',
+      },
+      include: {
+        company: {
+          select: {
+            id: true,
+            name: true,
+            status: true,
+            serviceSubscriptions: {
+              select: {
+                serviceType: true,
+                status: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -150,6 +171,21 @@ export class AuthService {
         id: userId,
         deletedAt: null,
         status: 'ACTIVE',
+      },
+      include: {
+        company: {
+          select: {
+            id: true,
+            name: true,
+            status: true,
+            serviceSubscriptions: {
+              select: {
+                serviceType: true,
+                status: true,
+              },
+            },
+          },
+        },
       },
     });
   }
@@ -209,6 +245,15 @@ export class AuthService {
     role: AuthenticatedUser['role'];
     status: string;
     companyId: string | null;
+    company?: {
+      id: string;
+      name: string;
+      status: string;
+      serviceSubscriptions?: {
+        serviceType: string;
+        status: string;
+      }[];
+    } | null;
   }): AuthenticatedUser {
     return {
       id: user.id,
@@ -218,6 +263,19 @@ export class AuthService {
       role: user.role,
       status: user.status,
       companyId: user.companyId,
+      company: user.company
+        ? {
+            id: user.company.id,
+            name: user.company.name,
+            status: user.company.status,
+            serviceSubscriptions: user.company.serviceSubscriptions?.map(
+              (subscription) => ({
+                serviceType: subscription.serviceType,
+                status: subscription.status,
+              }),
+            ),
+          }
+        : null,
     };
   }
 

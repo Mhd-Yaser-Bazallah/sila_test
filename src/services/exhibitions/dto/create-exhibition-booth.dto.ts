@@ -26,6 +26,10 @@ export class ExhibitionMapPointDto {
 }
 
 export class CreateExhibitionBoothDto {
+  @IsOptional()
+  @IsString()
+  sectorId?: string;
+
   @IsString()
   code: string;
 

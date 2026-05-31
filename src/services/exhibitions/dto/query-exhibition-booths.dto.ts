@@ -21,6 +21,10 @@ export class QueryExhibitionBoothsDto {
   search?: string;
 
   @IsOptional()
+  @IsString()
+  sectorId?: string;
+
+  @IsOptional()
   @IsEnum(ExhibitionBoothStatus)
   status?: ExhibitionBoothStatus;
 }

@@ -15,6 +15,10 @@ import { ExhibitionMapPointDto } from './create-exhibition-booth.dto';
 export class UpdateExhibitionBoothDto {
   @IsOptional()
   @IsString()
+  sectorId?: string | null;
+
+  @IsOptional()
+  @IsString()
   code?: string;
 
   @IsOptional()

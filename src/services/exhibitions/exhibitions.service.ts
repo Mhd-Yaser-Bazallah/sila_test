@@ -250,10 +250,12 @@ export class ExhibitionsService {
     const exhibition = await this.findPartnerExhibition(user, exhibitionId);
     this.ensurePartnerCanManageBooths(exhibition.status);
     this.validateCoordinates(createBoothDto.shape, createBoothDto.coordinates);
+    await this.validateBoothSector(exhibitionId, createBoothDto.sectorId);
 
     try {
       return await this.exhibitionsRepository.createBooth({
         exhibitionId,
+        sectorId: createBoothDto.sectorId,
         code: createBoothDto.code,
         title: createBoothDto.title,
         description: createBoothDto.description,
@@ -570,6 +572,7 @@ export class ExhibitionsService {
     if (coordinates) {
       this.validateCoordinates(shape, coordinates);
     }
+    await this.validateBoothSector(exhibitionId, updateBoothDto.sectorId);
 
     try {
       return await this.exhibitionsRepository.updateBooth(
@@ -753,6 +756,54 @@ export class ExhibitionsService {
     }
   }
 
+  async createAdminBooth(
+    exhibitionId: string,
+    createBoothDto: CreateExhibitionBoothDto,
+  ) {
+    await this.findAdminExhibition(exhibitionId);
+    this.validateCoordinates(createBoothDto.shape, createBoothDto.coordinates);
+    await this.validateBoothSector(exhibitionId, createBoothDto.sectorId);
+
+    try {
+      return await this.exhibitionsRepository.createBooth({
+        exhibitionId,
+        sectorId: createBoothDto.sectorId,
+        code: createBoothDto.code,
+        title: createBoothDto.title,
+        description: createBoothDto.description,
+        price: createBoothDto.price,
+        currency: createBoothDto.currency ?? 'USD',
+        status: createBoothDto.status ?? ExhibitionBoothStatus.AVAILABLE,
+        shape: createBoothDto.shape,
+        coordinates: createBoothDto.coordinates as unknown as Prisma.InputJsonValue,
+        color: createBoothDto.color,
+        area: createBoothDto.area,
+        sortOrder: createBoothDto.sortOrder ?? 0,
+      });
+    } catch (error) {
+      if (this.isUniqueConstraintError(error)) {
+        throw new ConflictException('Booth code already exists');
+      }
+
+      throw error;
+    }
+  }
+
+  async findAdminBooths(
+    exhibitionId: string,
+    query: QueryExhibitionBoothsDto,
+  ) {
+    await this.findAdminExhibition(exhibitionId);
+
+    return this.paginateBooths(exhibitionId, query);
+  }
+
+  async findAdminBooth(exhibitionId: string, boothId: string) {
+    await this.findAdminExhibition(exhibitionId);
+
+    return this.findBoothOrThrow(exhibitionId, boothId);
+  }
+
   async updateAdminBooth(
     exhibitionId: string,
     boothId: string,
@@ -765,6 +816,7 @@ export class ExhibitionsService {
     if (updateBoothDto.coordinates) {
       this.validateCoordinates(shape, updateBoothDto.coordinates);
     }
+    await this.validateBoothSector(exhibitionId, updateBoothDto.sectorId);
 
     try {
       return await this.exhibitionsRepository.updateBooth(
@@ -778,6 +830,21 @@ export class ExhibitionsService {
 
       throw error;
     }
+  }
+
+  async deleteAdminBooth(exhibitionId: string, boothId: string) {
+    await this.findAdminExhibition(exhibitionId);
+    const booth = await this.findBoothOrThrow(exhibitionId, boothId);
+
+    if (booth.status === ExhibitionBoothStatus.BOOKED) {
+      throw new BadRequestException('Booked booths cannot be deleted');
+    }
+
+    await this.exhibitionsRepository.updateBooth(boothId, {
+      deletedAt: new Date(),
+    });
+
+    return { message: 'Exhibition booth deleted successfully' };
   }
 
   findPublicExhibitions(query: QueryExhibitionsDto) {
@@ -920,6 +987,7 @@ export class ExhibitionsService {
     return {
       exhibitionId,
       deletedAt: null,
+      ...(query.sectorId ? { sectorId: query.sectorId } : {}),
       ...(query.status ? { status: query.status } : {}),
       ...(query.search
         ? {
@@ -941,6 +1009,14 @@ export class ExhibitionsService {
     const [data, total] = await Promise.all([
       this.exhibitionsRepository.findBooths({
         where,
+        include: {
+          sector: {
+            select: {
+              id: true,
+              title: true,
+            },
+          },
+        },
         skip,
         take: query.limit,
         orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }],
@@ -1161,6 +1237,26 @@ export class ExhibitionsService {
     return booth;
   }
 
+  private async validateBoothSector(
+    exhibitionId: string,
+    sectorId: string | null | undefined,
+  ): Promise<void> {
+    if (sectorId === null || sectorId === undefined) {
+      return;
+    }
+
+    const sector = await this.exhibitionsRepository.findSectorById(
+      sectorId,
+      exhibitionId,
+    );
+
+    if (!sector) {
+      throw new BadRequestException(
+        'Sector must belong to the same exhibition',
+      );
+    }
+  }
+
   private ensurePartnerCanManageBooths(status: ExhibitionStatus): void {
     if (
       status === ExhibitionStatus.APPROVED ||
@@ -1227,8 +1323,9 @@ export class ExhibitionsService {
 
   private toBoothUpdateData(
     updateBoothDto: UpdateExhibitionBoothDto,
-  ): Prisma.ExhibitionBoothUpdateInput {
+  ): Prisma.ExhibitionBoothUncheckedUpdateInput {
     return {
+      ...('sectorId' in updateBoothDto ? { sectorId: updateBoothDto.sectorId } : {}),
       code: updateBoothDto.code,
       title: updateBoothDto.title,
       description: updateBoothDto.description,

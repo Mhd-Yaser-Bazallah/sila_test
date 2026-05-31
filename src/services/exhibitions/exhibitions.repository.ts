@@ -160,6 +160,7 @@ export class ExhibitionsRepository extends BaseRepository<Exhibition> {
   createBooth(data: Prisma.ExhibitionBoothUncheckedCreateInput) {
     return this.prisma.exhibitionBooth.create({
       data,
+      include: this.boothInclude(),
     });
   }
 
@@ -174,13 +175,27 @@ export class ExhibitionsRepository extends BaseRepository<Exhibition> {
   findBoothById(boothId: string, exhibitionId: string) {
     return this.prisma.exhibitionBooth.findFirst({
       where: { id: boothId, exhibitionId, deletedAt: null },
+      include: this.boothInclude(),
     });
   }
 
-  updateBooth(id: string, data: Prisma.ExhibitionBoothUpdateInput) {
+  updateBooth(id: string, data: Prisma.ExhibitionBoothUncheckedUpdateInput) {
     return this.prisma.exhibitionBooth.update({
       where: { id },
       data,
+      include: this.boothInclude(),
+    });
+  }
+
+  findSectorById(sectorId: string, exhibitionId: string) {
+    return this.prisma.exhibitionSector.findFirst({
+      where: {
+        id: sectorId,
+        exhibitionId,
+      },
+      select: {
+        id: true,
+      },
     });
   }
 
@@ -407,6 +422,7 @@ export class ExhibitionsRepository extends BaseRepository<Exhibition> {
       booths: {
         where: { deletedAt: null },
         orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }],
+        include: this.boothInclude(),
       },
       _count: {
         select: {
@@ -481,6 +497,12 @@ export class ExhibitionsRepository extends BaseRepository<Exhibition> {
           coordinates: true,
           color: true,
           area: true,
+          sector: {
+            select: {
+              id: true,
+              title: true,
+            },
+          },
           sortOrder: true,
         },
       },
@@ -587,7 +609,24 @@ export class ExhibitionsRepository extends BaseRepository<Exhibition> {
       coordinates: true,
       color: true,
       area: true,
+      sector: {
+        select: {
+          id: true,
+          title: true,
+        },
+      },
     } satisfies Prisma.ExhibitionBoothSelect;
+  }
+
+  private boothInclude() {
+    return {
+      sector: {
+        select: {
+          id: true,
+          title: true,
+        },
+      },
+    } satisfies Prisma.ExhibitionBoothInclude;
   }
 
   private publicVisibleCompanyWhere() {

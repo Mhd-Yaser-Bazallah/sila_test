@@ -34,6 +34,19 @@ export class JwtStrategy extends PassportStrategy(Strategy, JWT_STRATEGY_NAME) {
         role: true,
         status: true,
         companyId: true,
+        company: {
+          select: {
+            id: true,
+            name: true,
+            status: true,
+            serviceSubscriptions: {
+              select: {
+                serviceType: true,
+                status: true,
+              },
+            },
+          },
+        },
       },
     });
 
