@@ -316,6 +316,8 @@ Interactive map booth coordinates are stored as percentage-based JSON points. Th
 
 Booths may optionally belong to an exhibition sector. Sectors are organizational metadata for grouping and filtering booths; customer bookings are still made on individual booths.
 
+Super admins can soft-delete exhibitions. Deleting an exhibition marks the exhibition and its booths as deleted, while preserving booking records and uploaded files for audit/history.
+
 Exhibition booth booking is request-based. Customers can request one or many available booths from an approved public exhibition. Partner companies approve or reject individual booth booking items; approval marks the booth as `BOOKED`, while rejection keeps it `AVAILABLE`. Admin exhibition booking endpoints are monitoring-only.
 
 ## Booking Notes

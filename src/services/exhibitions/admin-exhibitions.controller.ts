@@ -52,6 +52,11 @@ export class AdminExhibitionsController {
     return this.exhibitionsService.archiveExhibition(id);
   }
 
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.exhibitionsService.deleteAdminExhibition(id);
+  }
+
   @Post(':id/map-files/upload')
   uploadMapFiles(@Param('id') id: string, @Req() request: FastifyRequest) {
     return this.exhibitionsService.uploadAdminMapFiles(id, request);

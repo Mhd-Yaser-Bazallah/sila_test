@@ -826,6 +826,7 @@
         { "name": "Approve Exhibition", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] }, "method": "PATCH", "header": [], "url": "{{base_url}}/admin/exhibitions/{{exhibition_id}}/approve" } },
         { "name": "Reject Exhibition", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] }, "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Please improve map clarity before approval.\"\n}" }, "url": "{{base_url}}/admin/exhibitions/{{exhibition_id}}/reject" } },
         { "name": "Archive Exhibition", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] }, "method": "PATCH", "header": [], "url": "{{base_url}}/admin/exhibitions/{{exhibition_id}}/archive" } },
+        { "name": "Delete Exhibition", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] }, "method": "DELETE", "header": [], "url": "{{base_url}}/admin/exhibitions/{{exhibition_id}}" } },
         {
           "name": "Upload Map Files",
           "request": {

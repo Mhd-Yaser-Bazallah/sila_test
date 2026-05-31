@@ -734,6 +734,13 @@ export class ExhibitionsService {
     });
   }
 
+  async deleteAdminExhibition(id: string) {
+    await this.findAdminExhibition(id);
+    await this.exhibitionsRepository.softDeleteExhibition(id, new Date());
+
+    return { message: 'Exhibition deleted successfully' };
+  }
+
   async uploadAdminMapFiles(id: string, request: FastifyRequest) {
     const exhibition = await this.findAdminExhibition(id);
 
