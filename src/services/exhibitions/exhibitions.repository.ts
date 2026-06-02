@@ -187,6 +187,77 @@ export class ExhibitionsRepository extends BaseRepository<Exhibition> {
     });
   }
 
+  findActiveBoothsByCodes(exhibitionId: string, codes: string[]) {
+    return this.prisma.exhibitionBooth.findMany({
+      where: {
+        exhibitionId,
+        code: { in: codes },
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        code: true,
+      },
+    });
+  }
+
+  findActiveBoothsByIds(exhibitionId: string, boothIds: string[]) {
+    return this.prisma.exhibitionBooth.findMany({
+      where: {
+        exhibitionId,
+        id: { in: boothIds },
+        deletedAt: null,
+      },
+      include: this.boothInclude(),
+    });
+  }
+
+  createBoothsBulk(data: Prisma.ExhibitionBoothUncheckedCreateInput[]) {
+    return this.prisma.$transaction((tx) =>
+      Promise.all(
+        data.map((booth) =>
+          tx.exhibitionBooth.create({
+            data: booth,
+            include: this.boothInclude(),
+          }),
+        ),
+      ),
+    );
+  }
+
+  updateBoothsBulk(
+    updates: {
+      id: string;
+      data: Prisma.ExhibitionBoothUncheckedUpdateInput;
+    }[],
+  ) {
+    return this.prisma.$transaction((tx) =>
+      Promise.all(
+        updates.map((update) =>
+          tx.exhibitionBooth.update({
+            where: { id: update.id },
+            data: update.data,
+            include: this.boothInclude(),
+          }),
+        ),
+      ),
+    );
+  }
+
+  softDeleteBoothsBulk(ids: string[], deletedAt: Date) {
+    return this.prisma.$transaction(async (tx) => {
+      const result = await tx.exhibitionBooth.updateMany({
+        where: {
+          id: { in: ids },
+          deletedAt: null,
+        },
+        data: { deletedAt },
+      });
+
+      return result.count;
+    });
+  }
+
   findSectorById(sectorId: string, exhibitionId: string) {
     return this.prisma.exhibitionSector.findFirst({
       where: {

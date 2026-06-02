@@ -28,15 +28,21 @@ import { join, resolve } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { AuthenticatedUser } from '../../shared/auth/interfaces/authenticated-user.interface';
 import { NotificationsService } from '../../shared/notifications/notifications.service';
+import { CreateBulkExhibitionBoothsDto } from './dto/create-bulk-exhibition-booths.dto';
 import { CreateExhibitionBookingDto } from './dto/create-exhibition-booking.dto';
 import { CreateExhibitionBoothDto } from './dto/create-exhibition-booth.dto';
 import { CreateExhibitionDto } from './dto/create-exhibition.dto';
+import { DeleteBulkExhibitionBoothsDto } from './dto/delete-bulk-exhibition-booths.dto';
 import { QueryExhibitionBookingItemsDto } from './dto/query-exhibition-booking-items.dto';
 import { QueryExhibitionBookingsDto } from './dto/query-exhibition-bookings.dto';
 import { QueryExhibitionBoothsDto } from './dto/query-exhibition-booths.dto';
 import { QueryExhibitionsDto } from './dto/query-exhibitions.dto';
 import { RejectExhibitionBookingItemDto } from './dto/reject-exhibition-booking-item.dto';
 import { RejectExhibitionDto } from './dto/reject-exhibition.dto';
+import {
+  UpdateBulkExhibitionBoothItemDto,
+  UpdateBulkExhibitionBoothsDto,
+} from './dto/update-bulk-exhibition-booths.dto';
 import { UpdateExhibitionBoothDto } from './dto/update-exhibition-booth.dto';
 import { UpdateExhibitionMapFilesDto } from './dto/update-exhibition-map-files.dto';
 import { UpdateExhibitionDto } from './dto/update-exhibition.dto';
@@ -606,6 +612,161 @@ export class ExhibitionsService {
     });
 
     return { message: 'Exhibition booth deleted successfully' };
+  }
+
+  async createPartnerBoothsBulk(
+    user: AuthenticatedUser,
+    exhibitionId: string,
+    createBulkBoothsDto: CreateBulkExhibitionBoothsDto,
+  ) {
+    const exhibition = await this.findPartnerExhibition(user, exhibitionId);
+    this.ensurePartnerCanManageBooths(exhibition.status);
+
+    const booths = createBulkBoothsDto.booths;
+    this.ensureBulkLimit(booths.length);
+    this.ensureUniqueValues(
+      booths.map((booth) => booth.code),
+      'Duplicate booth codes are not allowed in the request',
+    );
+
+    const existingBooths =
+      await this.exhibitionsRepository.findActiveBoothsByCodes(
+        exhibitionId,
+        booths.map((booth) => booth.code),
+      );
+    if (existingBooths.length > 0) {
+      throw new ConflictException('Booth code already exists');
+    }
+
+    await this.validateBulkBoothSectors(
+      exhibitionId,
+      booths.map((booth) => booth.sectorId),
+    );
+    for (const booth of booths) {
+      this.validateCoordinates(booth.shape, booth.coordinates);
+    }
+
+    try {
+      return await this.exhibitionsRepository.createBoothsBulk(
+        booths.map((booth) => this.toBoothCreateData(exhibitionId, booth)),
+      );
+    } catch (error) {
+      if (this.isUniqueConstraintError(error)) {
+        throw new ConflictException('Booth code already exists');
+      }
+
+      throw error;
+    }
+  }
+
+  async updatePartnerBoothsBulk(
+    user: AuthenticatedUser,
+    exhibitionId: string,
+    updateBulkBoothsDto: UpdateBulkExhibitionBoothsDto,
+  ) {
+    const exhibition = await this.findPartnerExhibition(user, exhibitionId);
+    this.ensurePartnerCanManageBooths(exhibition.status);
+
+    const updates = updateBulkBoothsDto.booths;
+    this.ensureBulkLimit(updates.length);
+    const boothIds = updates.map((booth) => booth.id);
+    this.ensureUniqueValues(
+      boothIds,
+      'Duplicate booth IDs are not allowed in the request',
+    );
+
+    const existingBooths =
+      await this.exhibitionsRepository.findActiveBoothsByIds(
+        exhibitionId,
+        boothIds,
+      );
+    if (existingBooths.length !== boothIds.length) {
+      throw new BadRequestException('All booths must belong to the exhibition');
+    }
+
+    const existingBoothsById = new Map(
+      existingBooths.map((booth) => [booth.id, booth]),
+    );
+
+    for (const update of updates) {
+      const booth = existingBoothsById.get(update.id);
+      if (!booth) {
+        throw new BadRequestException(
+          'All booths must belong to the exhibition',
+        );
+      }
+
+      if (booth.status === ExhibitionBoothStatus.BOOKED) {
+        this.ensureBookedBoothPartnerUpdateIsSafe(update);
+      }
+
+      if (update.coordinates) {
+        this.validateCoordinates(update.shape ?? booth.shape, update.coordinates);
+      }
+    }
+
+    await this.validateBulkBoothSectors(
+      exhibitionId,
+      updates.map((booth) => booth.sectorId),
+    );
+    await this.ensureBulkUpdateCodeUniqueness(
+      exhibitionId,
+      updates,
+      existingBoothsById,
+    );
+
+    try {
+      return await this.exhibitionsRepository.updateBoothsBulk(
+        updates.map((update) => ({
+          id: update.id,
+          data: this.toBoothUpdateData(update),
+        })),
+      );
+    } catch (error) {
+      if (this.isUniqueConstraintError(error)) {
+        throw new ConflictException('Booth code already exists');
+      }
+
+      throw error;
+    }
+  }
+
+  async deletePartnerBoothsBulk(
+    user: AuthenticatedUser,
+    exhibitionId: string,
+    deleteBulkBoothsDto: DeleteBulkExhibitionBoothsDto,
+  ) {
+    const exhibition = await this.findPartnerExhibition(user, exhibitionId);
+    this.ensurePartnerCanManageBooths(exhibition.status);
+
+    const boothIds = deleteBulkBoothsDto.boothIds;
+    this.ensureBulkLimit(boothIds.length);
+    this.ensureUniqueValues(
+      boothIds,
+      'Duplicate booth IDs are not allowed in the request',
+    );
+
+    const booths = await this.exhibitionsRepository.findActiveBoothsByIds(
+      exhibitionId,
+      boothIds,
+    );
+    if (booths.length !== boothIds.length) {
+      throw new BadRequestException('All booths must belong to the exhibition');
+    }
+
+    if (booths.some((booth) => booth.status === ExhibitionBoothStatus.BOOKED)) {
+      throw new BadRequestException('Booked booths cannot be deleted');
+    }
+
+    const deletedCount = await this.exhibitionsRepository.softDeleteBoothsBulk(
+      boothIds,
+      new Date(),
+    );
+
+    return {
+      message: 'Booths deleted successfully',
+      deletedCount,
+    };
   }
 
   async confirmPartnerMap(user: AuthenticatedUser, id: string) {
@@ -1244,6 +1405,79 @@ export class ExhibitionsService {
     return booth;
   }
 
+  private ensureBulkLimit(count: number): void {
+    if (count < 1 || count > 200) {
+      throw new BadRequestException('Bulk booth requests support 1 to 200 items');
+    }
+  }
+
+  private ensureUniqueValues(values: string[], message: string): void {
+    if (new Set(values).size !== values.length) {
+      throw new BadRequestException(message);
+    }
+  }
+
+  private async validateBulkBoothSectors(
+    exhibitionId: string,
+    sectorIds: (string | null | undefined)[],
+  ): Promise<void> {
+    const uniqueSectorIds = Array.from(
+      new Set(
+        sectorIds.filter(
+          (sectorId): sectorId is string =>
+            sectorId !== null && sectorId !== undefined,
+        ),
+      ),
+    );
+
+    for (const sectorId of uniqueSectorIds) {
+      await this.validateBoothSector(exhibitionId, sectorId);
+    }
+  }
+
+  private async ensureBulkUpdateCodeUniqueness(
+    exhibitionId: string,
+    updates: UpdateBulkExhibitionBoothItemDto[],
+    existingBoothsById: Map<
+      string,
+      {
+        id: string;
+        code: string;
+      }
+    >,
+  ): Promise<void> {
+    const finalCodes = updates.map((update) => {
+      const booth = existingBoothsById.get(update.id);
+      return update.code ?? booth?.code ?? '';
+    });
+    this.ensureUniqueValues(
+      finalCodes,
+      'Duplicate booth codes are not allowed in the request',
+    );
+
+    const changedCodes = updates
+      .filter((update) => {
+        const booth = existingBoothsById.get(update.id);
+        return update.code !== undefined && update.code !== booth?.code;
+      })
+      .map((update) => update.code as string);
+
+    if (changedCodes.length === 0) {
+      return;
+    }
+
+    const conflictingBooths =
+      await this.exhibitionsRepository.findActiveBoothsByCodes(
+        exhibitionId,
+        changedCodes,
+      );
+    const updatingIds = new Set(updates.map((update) => update.id));
+
+    if (conflictingBooths.some((booth) => !updatingIds.has(booth.id))) {
+      throw new ConflictException('Booth code already exists');
+    }
+  }
+
   private async validateBoothSector(
     exhibitionId: string,
     sectorId: string | null | undefined,
@@ -1282,11 +1516,13 @@ export class ExhibitionsService {
       updateBoothDto.price !== undefined ||
       updateBoothDto.coordinates !== undefined ||
       updateBoothDto.shape !== undefined ||
+      'sectorId' in updateBoothDto ||
       updateBoothDto.status !== undefined ||
-      updateBoothDto.code !== undefined
+      updateBoothDto.code !== undefined ||
+      updateBoothDto.currency !== undefined
     ) {
       throw new BadRequestException(
-        'Booked booth price, map geometry, code, and status cannot be changed by partners',
+        'Booked booth price, map geometry, sector, code, currency, and status cannot be changed by partners',
       );
     }
   }
@@ -1346,6 +1582,28 @@ export class ExhibitionsService {
       color: updateBoothDto.color,
       area: updateBoothDto.area,
       sortOrder: updateBoothDto.sortOrder,
+    };
+  }
+
+  private toBoothCreateData(
+    exhibitionId: string,
+    createBoothDto: CreateExhibitionBoothDto,
+  ): Prisma.ExhibitionBoothUncheckedCreateInput {
+    return {
+      exhibitionId,
+      sectorId: createBoothDto.sectorId,
+      code: createBoothDto.code,
+      title: createBoothDto.title,
+      description: createBoothDto.description,
+      price: createBoothDto.price,
+      currency: createBoothDto.currency ?? 'USD',
+      status: createBoothDto.status ?? ExhibitionBoothStatus.AVAILABLE,
+      shape: createBoothDto.shape,
+      coordinates:
+        createBoothDto.coordinates as unknown as Prisma.InputJsonValue,
+      color: createBoothDto.color,
+      area: createBoothDto.area,
+      sortOrder: createBoothDto.sortOrder ?? 0,
     };
   }
 

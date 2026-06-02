@@ -14,10 +14,13 @@ import { Auth } from '../../shared/auth/decorators/auth.decorator';
 import { CurrentUser } from '../../shared/auth/decorators/current-user.decorator';
 import { Role } from '../../shared/auth/enums/role.enum';
 import type { AuthenticatedUser } from '../../shared/auth/interfaces/authenticated-user.interface';
+import { CreateBulkExhibitionBoothsDto } from './dto/create-bulk-exhibition-booths.dto';
 import { CreateExhibitionBoothDto } from './dto/create-exhibition-booth.dto';
 import { CreateExhibitionDto } from './dto/create-exhibition.dto';
+import { DeleteBulkExhibitionBoothsDto } from './dto/delete-bulk-exhibition-booths.dto';
 import { QueryExhibitionBoothsDto } from './dto/query-exhibition-booths.dto';
 import { QueryExhibitionsDto } from './dto/query-exhibitions.dto';
+import { UpdateBulkExhibitionBoothsDto } from './dto/update-bulk-exhibition-booths.dto';
 import { UpdateExhibitionBoothDto } from './dto/update-exhibition-booth.dto';
 import { UpdateExhibitionMapFilesDto } from './dto/update-exhibition-map-files.dto';
 import { UpdateExhibitionDto } from './dto/update-exhibition.dto';
@@ -121,6 +124,45 @@ export class PartnerExhibitionsController {
     @Param('boothId') boothId: string,
   ) {
     return this.exhibitionsService.findPartnerBooth(user, id, boothId);
+  }
+
+  @Post(':id/booths/bulk')
+  createBoothsBulk(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() createBulkBoothsDto: CreateBulkExhibitionBoothsDto,
+  ) {
+    return this.exhibitionsService.createPartnerBoothsBulk(
+      user,
+      id,
+      createBulkBoothsDto,
+    );
+  }
+
+  @Patch(':id/booths/bulk')
+  updateBoothsBulk(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() updateBulkBoothsDto: UpdateBulkExhibitionBoothsDto,
+  ) {
+    return this.exhibitionsService.updatePartnerBoothsBulk(
+      user,
+      id,
+      updateBulkBoothsDto,
+    );
+  }
+
+  @Delete(':id/booths/bulk')
+  deleteBoothsBulk(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() deleteBulkBoothsDto: DeleteBulkExhibitionBoothsDto,
+  ) {
+    return this.exhibitionsService.deletePartnerBoothsBulk(
+      user,
+      id,
+      deleteBulkBoothsDto,
+    );
   }
 
   @Patch(':id/booths/:boothId')

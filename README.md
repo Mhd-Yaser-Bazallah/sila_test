@@ -166,11 +166,11 @@ Expected response shape:
 
 `SUPER_ADMIN`
 
-Platform admin. Can manage companies, users, billboards, road packages, offers, exhibitions, and notifications. Booking access is monitoring-only.
+Platform admin. Can manage companies, users, billboards, road packages, offers, notifications, and exhibition review actions. Exhibition and booking access is monitoring-only except for approving, rejecting, archiving, or soft-deleting exhibitions.
 
 `COMPANY_ADMIN`
 
-Partner/company user. Can manage only their own company billboards, road packages, offers, exhibitions, billboard media, exhibition maps, unavailable periods, booths, and approve or reject booking items assigned to their company.
+Partner/company user. Can manage only their own company billboards, road packages, offers, exhibitions, billboard media, exhibition maps, unavailable periods, booths, and approve or reject booking items assigned to their company. Company admins fully own exhibition content, map files, and booth management.
 
 `CUSTOMER`
 
@@ -229,7 +229,7 @@ Recommended testing flow:
 12. Create Customer Booking
 13. Create Exhibition
 14. Upload Exhibition Map
-15. Create Exhibition Booth
+15. Create Exhibition Booth or Bulk Booths
 16. Confirm Map and Submit Exhibition
 17. Admin Approve Exhibition
 18. Public Exhibition Browsing
@@ -316,9 +316,21 @@ Interactive map booth coordinates are stored as percentage-based JSON points. Th
 
 Booths may optionally belong to an exhibition sector. Sectors are organizational metadata for grouping and filtering booths; customer bookings are still made on individual booths.
 
-Super admins can soft-delete exhibitions. Deleting an exhibition marks the exhibition and its booths as deleted, while preserving booking records and uploaded files for audit/history.
+Company admins manage exhibition booths through single-booth APIs and bulk APIs for large exhibition maps:
+
+```text
+POST /api/v1/partner/exhibitions/:id/booths/bulk
+PATCH /api/v1/partner/exhibitions/:id/booths/bulk
+DELETE /api/v1/partner/exhibitions/:id/booths/bulk
+```
+
+Bulk booth requests accept up to 200 booths or booth IDs per request and run in a transaction. Booths do not require admin approval and do not have an approval/rejection workflow.
+
+Super admins can review exhibitions, approve or reject submissions, archive exhibitions, monitor booths, and soft-delete exhibitions. They do not create, edit, delete, price, assign sectors, or upload map files for booths or exhibition content. Deleting an exhibition marks the exhibition and its booths as deleted, while preserving booking records and uploaded files for audit/history.
 
 Exhibition booth booking is request-based. Customers can request one or many available booths from an approved public exhibition. Partner companies approve or reject individual booth booking items; approval marks the booth as `BOOKED`, while rejection keeps it `AVAILABLE`. Admin exhibition booking endpoints are monitoring-only.
+
+`BOOKED` booths cannot be deleted. Company admins may update only descriptive booth fields on booked booths: title, description, color, area, and sort order. Geometry, coordinates, price, currency, sector, code, and status cannot be changed once a booth is booked.
 
 ## Booking Notes
 

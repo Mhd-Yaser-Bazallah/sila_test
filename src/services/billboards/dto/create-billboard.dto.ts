@@ -1,9 +1,4 @@
-import {
-  BillboardDirection,
-  BillboardType,
-  PricingUnit,
-  PrintedSubtype,
-} from '@prisma/client';
+import { BillboardType, PricingUnit } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   IsBoolean,
@@ -11,12 +6,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
-  Validate,
 } from 'class-validator';
-import {
-  HourPricingMatchesTypeConstraint,
-  PrintedSubtypeMatchesTypeConstraint,
-} from './billboard-business-rules.validator';
 
 export class CreateBillboardDto {
   @IsString()
@@ -47,7 +37,7 @@ export class CreateBillboardDto {
   @IsNumber()
   longitude: number;
 
-  @Type(() => Number)
+  @Type(() => Number) 
   @IsNumber()
   width?: number;
 
@@ -59,22 +49,8 @@ export class CreateBillboardDto {
   type: BillboardType;
 
   @IsOptional()
-  @IsEnum(BillboardDirection)
-  direction?: BillboardDirection;
-
-  @IsOptional()
-  @IsEnum(PrintedSubtype)
-  @Validate(PrintedSubtypeMatchesTypeConstraint)
-  printedSubtype?: PrintedSubtype;
-
-  @IsOptional()
   @IsBoolean()
   hasLighting?: boolean;
-
-  @Type(() => Number)
-  @IsOptional()
-  @IsNumber()
-  lightingPrice?: number;
 
   @Type(() => Number)
   @IsOptional()
@@ -83,13 +59,7 @@ export class CreateBillboardDto {
 
   @IsOptional()
   @IsEnum(PricingUnit)
-  @Validate(HourPricingMatchesTypeConstraint)
   pricingUnit?: PricingUnit;
-
-  @Type(() => Number)
-  @IsOptional()
-  @IsNumber()
-  taxRatePercent?: number;
 
   @IsOptional()
   @IsString()
