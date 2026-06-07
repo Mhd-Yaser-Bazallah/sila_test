@@ -1,5 +1,6 @@
+import { CustomerCompanyScope } from '@prisma/client';
 import { Type } from 'class-transformer';
-import { IsDate, IsOptional, IsString } from 'class-validator';
+import { IsDate, IsEnum, IsOptional, IsString } from 'class-validator';
 
 export class CreateBookingRequestDto {
   @Type(() => Date)
@@ -17,4 +18,7 @@ export class CreateBookingRequestDto {
   @IsOptional()
   @IsString()
   customerNotes?: string;
+
+  @IsEnum(CustomerCompanyScope)
+  customerCompanyScope: CustomerCompanyScope;
 }

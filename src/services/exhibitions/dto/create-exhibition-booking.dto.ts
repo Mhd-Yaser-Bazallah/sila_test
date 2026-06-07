@@ -16,9 +16,8 @@ export class CreateExhibitionBookingDto {
   @IsString()
   customerNotes?: string;
 
-  @IsOptional()
   @IsEnum(CustomerCompanyScope)
-  customerCompanyScope?: CustomerCompanyScope;
+  customerCompanyScope: CustomerCompanyScope;
 
   @IsOptional()
   @IsEnum(CustomerSector)

@@ -166,7 +166,7 @@ Expected response shape:
 
 `SUPER_ADMIN`
 
-Platform admin. Can manage companies, users, billboards, road packages, offers, notifications, and exhibition review actions. Exhibition and booking access is monitoring-only except for approving, rejecting, archiving, or soft-deleting exhibitions.
+Platform admin. Can manage companies, users, billboards, road packages, offer monitoring/archive actions, notifications, and exhibition review actions. Exhibition and booking access is monitoring-only except for approving, rejecting, archiving, or soft-deleting exhibitions.
 
 `COMPANY_ADMIN`
 
@@ -326,6 +326,8 @@ DELETE /api/v1/partner/exhibitions/:id/booths/bulk
 
 Bulk booth requests accept up to 200 booths or booth IDs per request and run in a transaction. Booths do not require admin approval and do not have an approval/rejection workflow.
 
+Exhibitions support both `heroImageUrl` and `secondaryHeroImageUrl` for public presentation, plus map image/PDF files for booth layout interactions.
+
 Super admins can review exhibitions, approve or reject submissions, archive exhibitions, monitor booths, and soft-delete exhibitions. They do not create, edit, delete, price, assign sectors, or upload map files for booths or exhibition content. Deleting an exhibition marks the exhibition and its booths as deleted, while preserving booking records and uploaded files for audit/history.
 
 Exhibition booth booking is request-based. Customers can request one or many available booths from an approved public exhibition. Partner companies approve or reject individual booth booking items; approval marks the booth as `BOOKED`, while rejection keeps it `AVAILABLE`. Admin exhibition booking endpoints are monitoring-only.
@@ -337,6 +339,7 @@ Exhibition booth booking is request-based. Customers can request one or many ava
 - Booking does not include payment yet.
 - Booking is request-based, not direct payment booking.
 - Customer bookings can contain individual billboards, road packages, and offers.
+- `customerCompanyScope` is required for customer billboard and exhibition bookings. `LOCAL` uses `localPrice`; `INTERNATIONAL` uses `internationalPrice`.
 - Customer exhibition bookings can contain one or many exhibition booths.
 - Partner companies approve or reject only their own booking items.
 - Admin booking endpoints are monitoring-only.
@@ -345,6 +348,16 @@ Exhibition booth booking is request-based. Customers can request one or many ava
 - Approved booking items and unavailable periods block future availability.
 - Partners cannot see customer email or phone in partner booking item responses.
 - Exhibition partner booking item responses also hide customer email and phone.
+
+## Pricing Rules
+
+- Billboards and exhibition booths use `localPrice` and `internationalPrice`; the legacy `price` field remains only for backward compatibility.
+- Public billboard `minPrice` / `maxPrice` filters match either scoped price.
+- Road packages and offers are booked as one logical booking item, while availability still checks the underlying billboards.
+- Offer original totals are calculated separately for local and international billboard prices. Partner offer create/update accepts `localDiscountedTotalPrice` and `internationalDiscountedTotalPrice`.
+- Offers no longer require admin approval. Partner-created offers become `APPROVED` immediately when all included billboards are approved, and public offer visibility still depends on approved status plus the offer date range.
+- DIGITAL billboards may include `displayDurationSeconds`; that field is invalid for non-digital billboards.
+- `pricingUnit: HOUR` remains valid only for `CAR_AD`, and `printedSubtype` remains valid only for `PRINTED`.
 
 ## Useful Scripts
 

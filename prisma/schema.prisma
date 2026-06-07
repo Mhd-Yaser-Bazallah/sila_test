@@ -259,9 +259,12 @@ model Billboard {
   hasLighting     Boolean            @default(false)
   lightingPrice   Decimal?           @db.Decimal(12, 2)
   price           Decimal?           @db.Decimal(12, 2)
+  localPrice      Decimal            @default(0) @db.Decimal(12, 2)
+  internationalPrice Decimal         @default(0) @db.Decimal(12, 2)
   pricingUnit     PricingUnit        @default(MONTH)
   currency        String             @default("USD")
   taxRatePercent  Decimal            @default(0) @db.Decimal(5, 2)
+  displayDurationSeconds Int?
   isPackageOnly   Boolean            @default(false)
   status          BillboardStatus    @default(DRAFT)
   rejectionReason String?
@@ -353,6 +356,7 @@ model Exhibition {
   slug                String           @unique
   description         String?
   heroImageUrl        String?
+  secondaryHeroImageUrl String?
   visitorCount        Int?
   participantCount    Int?
   participationDays   Int?
@@ -439,6 +443,8 @@ model ExhibitionBooth {
   title        String
   description  String?
   price        Decimal                @db.Decimal(12, 2)
+  localPrice   Decimal                @default(0) @db.Decimal(12, 2)
+  internationalPrice Decimal          @default(0) @db.Decimal(12, 2)
   currency     String                 @default("USD")
   status       ExhibitionBoothStatus  @default(AVAILABLE)
   shape        ExhibitionMapShape
@@ -498,6 +504,8 @@ model ExhibitionBookingItem {
   boothId          String                      @db.Uuid
   status           ExhibitionBookingItemStatus @default(PENDING)
   priceSnapshot    Decimal                     @db.Decimal(12, 2)
+  localPriceSnapshot Decimal?                  @db.Decimal(12, 2)
+  internationalPriceSnapshot Decimal?          @db.Decimal(12, 2)
   currency         String
   partnerNotes     String?
   approvedAt       DateTime?
@@ -559,6 +567,10 @@ model Offer {
   endsAt               DateTime
   originalTotalPrice   Decimal         @db.Decimal(12, 2)
   discountedTotalPrice Decimal         @db.Decimal(12, 2)
+  localOriginalTotalPrice Decimal      @default(0) @db.Decimal(12, 2)
+  internationalOriginalTotalPrice Decimal @default(0) @db.Decimal(12, 2)
+  localDiscountedTotalPrice Decimal    @default(0) @db.Decimal(12, 2)
+  internationalDiscountedTotalPrice Decimal @default(0) @db.Decimal(12, 2)
   currency             String          @default("USD")
   status               BillboardStatus @default(DRAFT)
   rejectionReason      String?
@@ -580,6 +592,8 @@ model OfferItem {
   offerId       String   @db.Uuid
   billboardId   String   @db.Uuid
   priceSnapshot Decimal? @db.Decimal(12, 2)
+  localPriceSnapshot Decimal? @db.Decimal(12, 2)
+  internationalPriceSnapshot Decimal? @db.Decimal(12, 2)
   createdAt     DateTime @default(now())
 
   offer     Offer     @relation(fields: [offerId], references: [id], onDelete: Cascade)
@@ -602,6 +616,9 @@ model BookingRequestItem {
   endDate          DateTime
   status           BookingRequestItemStatus @default(PENDING)
   priceSnapshot    Decimal?                 @db.Decimal(12, 2)
+  selectedCustomerCompanyScope CustomerCompanyScope?
+  localPriceSnapshot Decimal?               @db.Decimal(12, 2)
+  internationalPriceSnapshot Decimal?       @db.Decimal(12, 2)
   pricingUnit      PricingUnit
   currency         String
   taxRatePercent   Decimal                  @default(0) @db.Decimal(5, 2)

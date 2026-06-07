@@ -406,7 +406,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Main highway LED screen\",\n  \"country\": \"Syria\",\n  \"province\": \"Damascus\",\n  \"city\": \"Damascus\",\n  \"latitude\": 33.5138,\n  \"longitude\": 36.2765,\n  \"type\": \"DIGITAL\",\n  \"description\": \"High-visibility location\",\n  \"hasLighting\": true,\n  \"price\": 1200,\n  \"pricingUnit\": \"MONTH\",\n  \"currency\": \"USD\",\n  \"submitForApproval\": true\n}"
+              "raw": "{\n  \"title\": \"Main highway LED screen\",\n  \"country\": \"Syria\",\n  \"province\": \"Damascus\",\n  \"city\": \"Damascus\",\n  \"latitude\": 33.5138,\n  \"longitude\": 36.2765,\n  \"type\": \"DIGITAL\",\n  \"direction\": \"GOING\",\n  \"description\": \"High-visibility location\",\n  \"hasLighting\": true,\n  \"lightingPrice\": 0,\n  \"localPrice\": 1200,\n  \"internationalPrice\": 1800,\n  \"displayDurationSeconds\": 10,\n  \"pricingUnit\": \"MONTH\",\n  \"taxRatePercent\": 10,\n  \"currency\": \"USD\",\n  \"submitForApproval\": true\n}"
             },
             "url": "{{base_url}}/partner/billboards"
           }
@@ -418,7 +418,7 @@
           "request": {
             "method": "PATCH",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Updated highway LED screen\",\n  \"price\": 1300\n}" },
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Updated highway LED screen\",\n  \"localPrice\": 1300,\n  \"internationalPrice\": 1900,\n  \"displayDurationSeconds\": 12\n}" },
             "url": "{{base_url}}/partner/billboards/{{billboard_id}}"
           }
         },
@@ -502,7 +502,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Airport Road Package\",\n  \"description\": \"Billboards along the airport road\",\n  \"startLatitude\": 33.5,\n  \"startLongitude\": 36.2,\n  \"endLatitude\": 33.7,\n  \"endLongitude\": 36.5,\n  \"billboardsCount\": 10,\n  \"distanceBetweenBoards\": 500,\n  \"direction\": \"GOING\",\n  \"status\": \"DRAFT\",\n  \"billboardDefaults\": {\n    \"country\": \"Syria\",\n    \"province\": \"Damascus\",\n    \"city\": \"Damascus\",\n    \"type\": \"PRINTED\",\n    \"printedSubtype\": \"FLEX\",\n    \"width\": 4,\n    \"height\": 3,\n    \"hasLighting\": false,\n    \"lightingPrice\": 0,\n    \"price\": 500,\n    \"pricingUnit\": \"MONTH\",\n    \"currency\": \"USD\",\n    \"taxRatePercent\": 10\n  }\n}"
+              "raw": "{\n  \"title\": \"Airport Road Package\",\n  \"description\": \"Billboards along the airport road\",\n  \"startLatitude\": 33.5,\n  \"startLongitude\": 36.2,\n  \"endLatitude\": 33.7,\n  \"endLongitude\": 36.5,\n  \"billboardsCount\": 10,\n  \"distanceBetweenBoards\": 500,\n  \"direction\": \"GOING\",\n  \"status\": \"DRAFT\",\n  \"billboardDefaults\": {\n    \"country\": \"Syria\",\n    \"province\": \"Damascus\",\n    \"city\": \"Damascus\",\n    \"type\": \"PRINTED\",\n    \"printedSubtype\": \"FLEX\",\n    \"width\": 4,\n    \"height\": 3,\n    \"hasLighting\": false,\n    \"lightingPrice\": 0,\n    \"localPrice\": 500,\n    \"internationalPrice\": 750,\n    \"pricingUnit\": \"MONTH\",\n    \"currency\": \"USD\",\n    \"taxRatePercent\": 10\n  }\n}"
             },
             "url": "{{base_url}}/partner/road-packages"
           }
@@ -545,7 +545,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Summer Billboard Bundle\",\n  \"description\": \"Discounted package for selected billboards\",\n  \"startsAt\": \"2026-06-01T00:00:00.000Z\",\n  \"endsAt\": \"2026-07-01T00:00:00.000Z\",\n  \"discountedTotalPrice\": 3500,\n  \"currency\": \"USD\",\n  \"billboardIds\": [\"{{billboard_id}}\", \"{{second_billboard_id}}\"],\n  \"submitForApproval\": false\n}"
+              "raw": "{\n  \"title\": \"Summer Billboard Bundle\",\n  \"description\": \"Discounted package for selected billboards\",\n  \"startsAt\": \"2026-06-01T00:00:00.000Z\",\n  \"endsAt\": \"2026-07-01T00:00:00.000Z\",\n  \"localDiscountedTotalPrice\": 3500,\n  \"internationalDiscountedTotalPrice\": 5200,\n  \"currency\": \"USD\",\n  \"billboardIds\": [\"{{billboard_id}}\", \"{{second_billboard_id}}\"]\n}"
             },
             "url": "{{base_url}}/partner/offers"
           }
@@ -557,11 +557,10 @@
           "request": {
             "method": "PATCH",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Summer Billboard Bundle Updated\",\n  \"discountedTotalPrice\": 3200\n}" },
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Summer Billboard Bundle Updated\",\n  \"localDiscountedTotalPrice\": 3200,\n  \"internationalDiscountedTotalPrice\": 5000\n}" },
             "url": "{{base_url}}/partner/offers/{{offer_id}}"
           }
         },
-        { "name": "Submit Offer", "request": { "method": "PATCH", "header": [], "url": "{{base_url}}/partner/offers/{{offer_id}}/submit" } },
         { "name": "Delete Offer", "request": { "method": "DELETE", "header": [], "url": "{{base_url}}/partner/offers/{{offer_id}}" } }
       ]
     },
@@ -629,18 +628,8 @@
       "name": "Admin Offers",
       "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{super_admin_access_token}}", "type": "string" }] },
       "item": [
-        { "name": "List Admin Offers", "request": { "method": "GET", "header": [], "url": "{{base_url}}/admin/offers?page=1&limit=20&status=PENDING_APPROVAL" } },
+        { "name": "List Admin Offers", "request": { "method": "GET", "header": [], "url": "{{base_url}}/admin/offers?page=1&limit=20&status=APPROVED" } },
         { "name": "Get Admin Offer", "request": { "method": "GET", "header": [], "url": "{{base_url}}/admin/offers/{{offer_id}}" } },
-        { "name": "Approve Offer", "request": { "method": "PATCH", "header": [], "url": "{{base_url}}/admin/offers/{{offer_id}}/approve" } },
-        {
-          "name": "Reject Offer",
-          "request": {
-            "method": "PATCH",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Please adjust the offer discount or billboards.\"\n}" },
-            "url": "{{base_url}}/admin/offers/{{offer_id}}/reject"
-          }
-        },
         { "name": "Archive Offer", "request": { "method": "PATCH", "header": [], "url": "{{base_url}}/admin/offers/{{offer_id}}/archive" } }
       ]
     },
@@ -747,7 +736,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Sila Expo 2026\",\n  \"subtitle\": \"Regional business exhibition\",\n  \"description\": \"A multi-sector exhibition for brands and visitors.\",\n  \"heroImageUrl\": \"https://example.com/exhibitions/sila-expo.jpg\",\n  \"visitorCount\": 12000,\n  \"participantCount\": 220,\n  \"participationDays\": 4,\n  \"startsAt\": \"2026-09-01T09:00:00.000Z\",\n  \"endsAt\": \"2026-09-04T18:00:00.000Z\",\n  \"venueName\": \"Sila Convention Center\",\n  \"country\": \"Syria\",\n  \"province\": \"Damascus\",\n  \"city\": \"Damascus\",\n  \"addressText\": \"Main exhibition grounds\",\n  \"aboutCards\": [\n    { \"title\": \"About\", \"text\": \"A focused exhibition for business growth.\", \"sortOrder\": 0 }\n  ],\n  \"sectors\": [\n    { \"title\": \"Technology\", \"text\": \"Software, hardware, and services.\", \"bullets\": [\"SaaS\", \"AI\", \"Infrastructure\"], \"sortOrder\": 0 }\n  ],\n  \"participationFeatures\": [\n    { \"title\": \"Lead generation\", \"text\": \"Meet visitors and qualified buyers.\", \"sortOrder\": 0 }\n  ]\n}"
+              "raw": "{\n  \"title\": \"Sila Expo 2026\",\n  \"subtitle\": \"Regional business exhibition\",\n  \"description\": \"A multi-sector exhibition for brands and visitors.\",\n  \"heroImageUrl\": \"https://example.com/exhibitions/sila-expo.jpg\",\n  \"secondaryHeroImageUrl\": \"https://example.com/exhibitions/sila-expo-secondary.jpg\",\n  \"visitorCount\": 12000,\n  \"participantCount\": 220,\n  \"participationDays\": 4,\n  \"startsAt\": \"2026-09-01T09:00:00.000Z\",\n  \"endsAt\": \"2026-09-04T18:00:00.000Z\",\n  \"venueName\": \"Sila Convention Center\",\n  \"country\": \"Syria\",\n  \"province\": \"Damascus\",\n  \"city\": \"Damascus\",\n  \"addressText\": \"Main exhibition grounds\",\n  \"aboutCards\": [\n    { \"title\": \"About\", \"text\": \"A focused exhibition for business growth.\", \"sortOrder\": 0 }\n  ],\n  \"sectors\": [\n    { \"title\": \"Technology\", \"text\": \"Software, hardware, and services.\", \"bullets\": [\"SaaS\", \"AI\", \"Infrastructure\"], \"sortOrder\": 0 }\n  ],\n  \"participationFeatures\": [\n    { \"title\": \"Lead generation\", \"text\": \"Meet visitors and qualified buyers.\", \"sortOrder\": 0 }\n  ]\n}"
             },
             "url": "{{base_url}}/partner/exhibitions"
           }
@@ -808,7 +797,7 @@
             "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] },
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"sectorId\": \"{{exhibition_sector_id}}\",\n  \"code\": \"A-01\",\n  \"title\": \"Booth A-01\",\n  \"description\": \"Near main entrance\",\n  \"price\": 500,\n  \"currency\": \"USD\",\n  \"status\": \"AVAILABLE\",\n  \"shape\": \"POLYGON\",\n  \"coordinates\": [\n    { \"x\": 12.5, \"y\": 20.3 },\n    { \"x\": 18.7, \"y\": 20.3 },\n    { \"x\": 18.7, \"y\": 28.1 },\n    { \"x\": 12.5, \"y\": 28.1 }\n  ],\n  \"color\": \"#FFCC00\",\n  \"area\": \"12 sqm\",\n  \"sortOrder\": 0\n}" },
+            "body": { "mode": "raw", "raw": "{\n  \"sectorId\": \"{{exhibition_sector_id}}\",\n  \"code\": \"A-01\",\n  \"title\": \"Booth A-01\",\n  \"description\": \"Near main entrance\",\n  \"localPrice\": 500,\n  \"internationalPrice\": 800,\n  \"currency\": \"USD\",\n  \"status\": \"AVAILABLE\",\n  \"shape\": \"POLYGON\",\n  \"coordinates\": [\n    { \"x\": 12.5, \"y\": 20.3 },\n    { \"x\": 18.7, \"y\": 20.3 },\n    { \"x\": 18.7, \"y\": 28.1 },\n    { \"x\": 12.5, \"y\": 28.1 }\n  ],\n  \"color\": \"#FFCC00\",\n  \"area\": \"12 sqm\",\n  \"sortOrder\": 0\n}" },
             "url": "{{base_url}}/partner/exhibitions/{{exhibition_id}}/booths"
           }
         },
@@ -819,7 +808,7 @@
             "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] },
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"booths\": [\n    {\n      \"sectorId\": \"{{exhibition_sector_id}}\",\n      \"code\": \"B-01\",\n      \"title\": \"Booth B-01\",\n      \"description\": \"Technology sector corner booth\",\n      \"price\": 750,\n      \"currency\": \"USD\",\n      \"status\": \"AVAILABLE\",\n      \"shape\": \"RECTANGLE\",\n      \"coordinates\": [\n        { \"x\": 30, \"y\": 20 },\n        { \"x\": 38, \"y\": 28 }\n      ],\n      \"color\": \"#00AEEF\",\n      \"area\": \"16 sqm\",\n      \"sortOrder\": 10\n    },\n    {\n      \"sectorId\": \"{{exhibition_sector_id}}\",\n      \"code\": \"B-02\",\n      \"title\": \"Booth B-02\",\n      \"description\": \"Inline booth near main aisle\",\n      \"price\": 650,\n      \"currency\": \"USD\",\n      \"status\": \"AVAILABLE\",\n      \"shape\": \"POLYGON\",\n      \"coordinates\": [\n        { \"x\": 40, \"y\": 20 },\n        { \"x\": 46, \"y\": 20 },\n        { \"x\": 46, \"y\": 28 },\n        { \"x\": 40, \"y\": 28 }\n      ],\n      \"color\": \"#FFCC00\",\n      \"area\": \"12 sqm\",\n      \"sortOrder\": 11\n    }\n  ]\n}" },
+            "body": { "mode": "raw", "raw": "{\n  \"booths\": [\n    {\n      \"sectorId\": \"{{exhibition_sector_id}}\",\n      \"code\": \"B-01\",\n      \"title\": \"Booth B-01\",\n      \"description\": \"Technology sector corner booth\",\n      \"localPrice\": 750,\n      \"internationalPrice\": 1100,\n      \"currency\": \"USD\",\n      \"status\": \"AVAILABLE\",\n      \"shape\": \"RECTANGLE\",\n      \"coordinates\": [\n        { \"x\": 30, \"y\": 20 },\n        { \"x\": 38, \"y\": 28 }\n      ],\n      \"color\": \"#00AEEF\",\n      \"area\": \"16 sqm\",\n      \"sortOrder\": 10\n    },\n    {\n      \"sectorId\": \"{{exhibition_sector_id}}\",\n      \"code\": \"B-02\",\n      \"title\": \"Booth B-02\",\n      \"description\": \"Inline booth near main aisle\",\n      \"localPrice\": 650,\n      \"internationalPrice\": 950,\n      \"currency\": \"USD\",\n      \"status\": \"AVAILABLE\",\n      \"shape\": \"POLYGON\",\n      \"coordinates\": [\n        { \"x\": 40, \"y\": 20 },\n        { \"x\": 46, \"y\": 20 },\n        { \"x\": 46, \"y\": 28 },\n        { \"x\": 40, \"y\": 28 }\n      ],\n      \"color\": \"#FFCC00\",\n      \"area\": \"12 sqm\",\n      \"sortOrder\": 11\n    }\n  ]\n}" },
             "url": "{{base_url}}/partner/exhibitions/{{exhibition_id}}/booths/bulk"
           }
         },
@@ -829,7 +818,7 @@
             "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{company_admin_access_token}}", "type": "string" }] },
             "method": "PATCH",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"booths\": [\n    {\n      \"id\": \"{{exhibition_booth_id}}\",\n      \"code\": \"A-01\",\n      \"title\": \"Updated Booth A-01\",\n      \"description\": \"Updated booth near entrance\",\n      \"price\": 600,\n      \"currency\": \"USD\",\n      \"status\": \"AVAILABLE\",\n      \"shape\": \"RECTANGLE\",\n      \"coordinates\": [\n        { \"x\": 10, \"y\": 10 },\n        { \"x\": 22, \"y\": 22 }\n      ],\n      \"color\": \"#00FF00\",\n      \"area\": \"14 sqm\",\n      \"sectorId\": null,\n      \"sortOrder\": 1\n    }\n  ]\n}" },
+            "body": { "mode": "raw", "raw": "{\n  \"booths\": [\n    {\n      \"id\": \"{{exhibition_booth_id}}\",\n      \"code\": \"A-01\",\n      \"title\": \"Updated Booth A-01\",\n      \"description\": \"Updated booth near entrance\",\n      \"localPrice\": 600,\n      \"internationalPrice\": 900,\n      \"currency\": \"USD\",\n      \"status\": \"AVAILABLE\",\n      \"shape\": \"RECTANGLE\",\n      \"coordinates\": [\n        { \"x\": 10, \"y\": 10 },\n        { \"x\": 22, \"y\": 22 }\n      ],\n      \"color\": \"#00FF00\",\n      \"area\": \"14 sqm\",\n      \"sectorId\": null,\n      \"sortOrder\": 1\n    }\n  ]\n}" },
             "url": "{{base_url}}/partner/exhibitions/{{exhibition_id}}/booths/bulk"
           }
         },

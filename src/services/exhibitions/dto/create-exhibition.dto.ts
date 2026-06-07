@@ -84,6 +84,10 @@ export class CreateExhibitionDto {
   @IsString()
   heroImageUrl?: string;
 
+  @IsOptional()
+  @IsString()
+  secondaryHeroImageUrl?: string;
+
   @Type(() => Number)
   @IsOptional()
   @IsInt()

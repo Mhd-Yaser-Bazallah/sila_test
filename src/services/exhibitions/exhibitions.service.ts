@@ -10,6 +10,7 @@ import '@fastify/multipart';
 import type { MultipartFile } from '@fastify/multipart';
 import type { FastifyRequest } from 'fastify';
 import {
+  CustomerCompanyScope,
   ExhibitionBookingItemStatus,
   ExhibitionBookingRequestStatus,
   ExhibitionBoothStatus,
@@ -265,7 +266,9 @@ export class ExhibitionsService {
         code: createBoothDto.code,
         title: createBoothDto.title,
         description: createBoothDto.description,
-        price: createBoothDto.price,
+        price: createBoothDto.price ?? createBoothDto.localPrice,
+        localPrice: createBoothDto.localPrice,
+        internationalPrice: createBoothDto.internationalPrice,
         currency: createBoothDto.currency ?? 'USD',
         status: createBoothDto.status ?? ExhibitionBoothStatus.AVAILABLE,
         shape: createBoothDto.shape,
@@ -332,7 +335,8 @@ export class ExhibitionsService {
     }
 
     const subtotalBeforeTax = booths.reduce(
-      (total, booth) => total + Number(booth.price),
+      (total, booth) =>
+        total + this.resolveBoothPrice(booth, createBookingDto.customerCompanyScope),
       0,
     );
     const totalTaxAmount = 0;
@@ -359,7 +363,12 @@ export class ExhibitionsService {
         items: booths.map((booth) => ({
           boothId: booth.id,
           status: ExhibitionBookingItemStatus.PENDING,
-          priceSnapshot: booth.price,
+          priceSnapshot: this.resolveBoothPrice(
+            booth,
+            createBookingDto.customerCompanyScope,
+          ),
+          localPriceSnapshot: booth.localPrice,
+          internationalPriceSnapshot: booth.internationalPrice,
           currency: booth.currency,
         })),
       });
@@ -939,7 +948,9 @@ export class ExhibitionsService {
         code: createBoothDto.code,
         title: createBoothDto.title,
         description: createBoothDto.description,
-        price: createBoothDto.price,
+        price: createBoothDto.price ?? createBoothDto.localPrice,
+        localPrice: createBoothDto.localPrice,
+        internationalPrice: createBoothDto.internationalPrice,
         currency: createBoothDto.currency ?? 'USD',
         status: createBoothDto.status ?? ExhibitionBoothStatus.AVAILABLE,
         shape: createBoothDto.shape,
@@ -1514,6 +1525,8 @@ export class ExhibitionsService {
   ): void {
     if (
       updateBoothDto.price !== undefined ||
+      updateBoothDto.localPrice !== undefined ||
+      updateBoothDto.internationalPrice !== undefined ||
       updateBoothDto.coordinates !== undefined ||
       updateBoothDto.shape !== undefined ||
       'sectorId' in updateBoothDto ||
@@ -1564,6 +1577,24 @@ export class ExhibitionsService {
     }
   }
 
+  private resolveBoothPrice(
+    booth: {
+      localPrice: Prisma.Decimal | number;
+      internationalPrice: Prisma.Decimal | number;
+    },
+    customerCompanyScope: CustomerCompanyScope,
+  ): number {
+    if (customerCompanyScope === CustomerCompanyScope.LOCAL) {
+      return Number(booth.localPrice);
+    }
+
+    if (customerCompanyScope === CustomerCompanyScope.INTERNATIONAL) {
+      return Number(booth.internationalPrice);
+    }
+
+    throw new BadRequestException('customerCompanyScope is required for pricing');
+  }
+
   private toBoothUpdateData(
     updateBoothDto: UpdateExhibitionBoothDto,
   ): Prisma.ExhibitionBoothUncheckedUpdateInput {
@@ -1573,6 +1604,8 @@ export class ExhibitionsService {
       title: updateBoothDto.title,
       description: updateBoothDto.description,
       price: updateBoothDto.price,
+      localPrice: updateBoothDto.localPrice,
+      internationalPrice: updateBoothDto.internationalPrice,
       currency: updateBoothDto.currency,
       status: updateBoothDto.status,
       shape: updateBoothDto.shape,
@@ -1595,7 +1628,9 @@ export class ExhibitionsService {
       code: createBoothDto.code,
       title: createBoothDto.title,
       description: createBoothDto.description,
-      price: createBoothDto.price,
+      price: createBoothDto.price ?? createBoothDto.localPrice,
+      localPrice: createBoothDto.localPrice,
+      internationalPrice: createBoothDto.internationalPrice,
       currency: createBoothDto.currency ?? 'USD',
       status: createBoothDto.status ?? ExhibitionBoothStatus.AVAILABLE,
       shape: createBoothDto.shape,
@@ -1622,6 +1657,7 @@ export class ExhibitionsService {
         subtitle: dto.subtitle,
         description: dto.description,
         heroImageUrl: dto.heroImageUrl,
+        secondaryHeroImageUrl: dto.secondaryHeroImageUrl,
         visitorCount: dto.visitorCount,
         participantCount: dto.participantCount,
         participationDays: dto.participationDays,

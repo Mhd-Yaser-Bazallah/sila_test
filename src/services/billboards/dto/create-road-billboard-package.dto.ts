@@ -21,6 +21,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import {
+  DisplayDurationMatchesTypeConstraint,
   HourPricingMatchesTypeConstraint,
   PrintedSubtypeMatchesTypeConstraint,
 } from './billboard-business-rules.validator';
@@ -63,14 +64,32 @@ export class RoadPackageBillboardDefaultsDto {
   lightingPrice?: number;
 
   @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  localPrice: number;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  internationalPrice: number;
+
+  @Type(() => Number)
   @IsOptional()
   @IsNumber()
+  @Min(0)
   price?: number;
 
   @IsOptional()
   @IsEnum(PricingUnit)
   @Validate(HourPricingMatchesTypeConstraint)
   pricingUnit?: PricingUnit;
+
+  @Type(() => Number)
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Validate(DisplayDurationMatchesTypeConstraint)
+  displayDurationSeconds?: number;
 
   @IsOptional()
   @IsString()

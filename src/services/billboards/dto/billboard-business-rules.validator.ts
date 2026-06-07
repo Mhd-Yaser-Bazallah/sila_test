@@ -47,3 +47,22 @@ export class HourPricingMatchesTypeConstraint
     return 'pricingUnit HOUR is only valid for CAR_AD billboards';
   }
 }
+
+@ValidatorConstraint({ name: 'displayDurationMatchesType', async: false })
+export class DisplayDurationMatchesTypeConstraint
+  implements ValidatorConstraintInterface
+{
+  validate(value: unknown, args: ValidationArguments): boolean {
+    if (value === undefined || value === null) {
+      return true;
+    }
+
+    const target = args.object as BillboardRuleTarget;
+
+    return target.type === undefined || target.type === BillboardType.DIGITAL;
+  }
+
+  defaultMessage(): string {
+    return 'displayDurationSeconds is only valid for DIGITAL billboards';
+  }
+}

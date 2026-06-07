@@ -8,6 +8,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Min,
 } from 'class-validator';
 
 export class UpdateOfferDto {
@@ -33,6 +34,18 @@ export class UpdateOfferDto {
   @IsOptional()
   @IsNumber()
   discountedTotalPrice?: number;
+
+  @Type(() => Number)
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  localDiscountedTotalPrice?: number;
+
+  @Type(() => Number)
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  internationalDiscountedTotalPrice?: number;
 
   @IsOptional()
   @IsString()

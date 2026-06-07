@@ -41,9 +41,20 @@ export class CreateExhibitionBoothDto {
   description?: string;
 
   @Type(() => Number)
+  @IsOptional()
   @IsNumber()
   @Min(0)
-  price: number;
+  price?: number;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  localPrice: number;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  internationalPrice: number;
 
   @IsOptional()
   @IsString()

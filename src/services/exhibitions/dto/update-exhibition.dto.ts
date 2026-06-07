@@ -31,6 +31,10 @@ export class UpdateExhibitionDto {
   @IsString()
   heroImageUrl?: string;
 
+  @IsOptional()
+  @IsString()
+  secondaryHeroImageUrl?: string;
+
   @Type(() => Number)
   @IsOptional()
   @IsInt()

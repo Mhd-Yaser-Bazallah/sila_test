@@ -14,6 +14,7 @@ import {
   BookingRequestItemStatus,
   BookingRequestStatus,
   BillboardType,
+  CustomerCompanyScope,
   MediaType,
   NotificationType,
   PricingUnit,
@@ -94,6 +95,8 @@ interface BookingBillboardSnapshot {
   id: string;
   companyId: string;
   price: Prisma.Decimal | number | null;
+  localPrice: Prisma.Decimal | number;
+  internationalPrice: Prisma.Decimal | number;
   pricingUnit: PricingUnit;
   currency: string;
   taxRatePercent: Prisma.Decimal | number;
@@ -104,6 +107,9 @@ interface ResolvedBookingItem {
   companyId: string;
   billboardIds: string[];
   priceSnapshot: number | null;
+  selectedCustomerCompanyScope: CustomerCompanyScope;
+  localPriceSnapshot?: number;
+  internationalPriceSnapshot?: number;
   pricingUnit: PricingUnit;
   currency: string;
   taxRatePercent: number;
@@ -138,6 +144,7 @@ export class BillboardsService {
   ) {
     const companyId = await this.getPartnerCompanyIdWithSubscription(user);
     const { submitForApproval, ...billboardData } = createBillboardDto;
+    this.ensureBillboardBusinessRules(billboardData);
 
     const billboard = await this.billboardsRepository.createBillboard({
       ...billboardData,
@@ -189,6 +196,16 @@ export class BillboardsService {
     updateBillboardDto: UpdateBillboardDto,
   ) {
     const billboard = await this.findPartnerBillboard(user, id);
+    this.ensureBillboardBusinessRules({
+      type: updateBillboardDto.type ?? billboard.type,
+      printedSubtype:
+        updateBillboardDto.printedSubtype ?? billboard.printedSubtype ?? undefined,
+      pricingUnit: updateBillboardDto.pricingUnit ?? billboard.pricingUnit,
+      displayDurationSeconds:
+        updateBillboardDto.displayDurationSeconds ??
+        billboard.displayDurationSeconds ??
+        undefined,
+    });
 
     const updatedBillboard = await this.billboardsRepository.updateBillboard(
       id,
@@ -689,11 +706,9 @@ export class BillboardsService {
     const pricing = await this.calculateOfferPricing(
       companyId,
       createOfferDto.billboardIds,
-      createOfferDto.discountedTotalPrice,
+      createOfferDto.localDiscountedTotalPrice,
+      createOfferDto.internationalDiscountedTotalPrice,
     );
-    const status = createOfferDto.submitForApproval
-      ? BillboardStatus.PENDING_APPROVAL
-      : BillboardStatus.DRAFT;
     const offer = await this.billboardsRepository.createOfferWithItems({
       offerData: {
         companyId,
@@ -701,17 +716,19 @@ export class BillboardsService {
         description: createOfferDto.description,
         startsAt: createOfferDto.startsAt,
         endsAt: createOfferDto.endsAt,
-        originalTotalPrice: pricing.originalTotalPrice,
-        discountedTotalPrice: createOfferDto.discountedTotalPrice,
+        originalTotalPrice: pricing.localOriginalTotalPrice,
+        discountedTotalPrice: createOfferDto.localDiscountedTotalPrice,
+        localOriginalTotalPrice: pricing.localOriginalTotalPrice,
+        internationalOriginalTotalPrice: pricing.internationalOriginalTotalPrice,
+        localDiscountedTotalPrice: createOfferDto.localDiscountedTotalPrice,
+        internationalDiscountedTotalPrice:
+          createOfferDto.internationalDiscountedTotalPrice,
         currency: createOfferDto.currency ?? 'USD',
-        status,
+        status: BillboardStatus.APPROVED,
+        approvedAt: new Date(),
       },
       items: pricing.items,
     });
-
-    if (status === BillboardStatus.PENDING_APPROVAL) {
-      await this.notifyOfferSubmitted(offer.id);
-    }
 
     return this.withOfferDiscountAmount(offer);
   }
@@ -773,22 +790,35 @@ export class BillboardsService {
       ? await this.calculateOfferPricing(
           companyId,
           updateOfferDto.billboardIds,
-          updateOfferDto.discountedTotalPrice ??
-            Number(offer.discountedTotalPrice),
+          updateOfferDto.localDiscountedTotalPrice ??
+            Number(offer.localDiscountedTotalPrice),
+          updateOfferDto.internationalDiscountedTotalPrice ??
+            Number(offer.internationalDiscountedTotalPrice),
         )
       : {
-          originalTotalPrice: Number(offer.originalTotalPrice),
+          localOriginalTotalPrice: Number(offer.localOriginalTotalPrice),
+          internationalOriginalTotalPrice: Number(
+            offer.internationalOriginalTotalPrice,
+          ),
           items: undefined,
         };
-    const discountedTotalPrice =
-      updateOfferDto.discountedTotalPrice ?? Number(offer.discountedTotalPrice);
+    const localDiscountedTotalPrice =
+      updateOfferDto.localDiscountedTotalPrice ??
+      updateOfferDto.discountedTotalPrice ??
+      Number(offer.localDiscountedTotalPrice);
+    const internationalDiscountedTotalPrice =
+      updateOfferDto.internationalDiscountedTotalPrice ??
+      Number(offer.internationalDiscountedTotalPrice);
 
     this.ensureOfferDiscountIsValid(
-      pricing.originalTotalPrice,
-      discountedTotalPrice,
+      pricing.localOriginalTotalPrice,
+      localDiscountedTotalPrice,
+    );
+    this.ensureOfferDiscountIsValid(
+      pricing.internationalOriginalTotalPrice,
+      internationalDiscountedTotalPrice,
     );
 
-    const shouldResubmit = offer.status === BillboardStatus.APPROVED;
     const updatedOffer = await this.billboardsRepository.updateOffer(
       id,
       {
@@ -796,23 +826,19 @@ export class BillboardsService {
         description: updateOfferDto.description,
         startsAt: updateOfferDto.startsAt,
         endsAt: updateOfferDto.endsAt,
-        originalTotalPrice: pricing.originalTotalPrice,
-        discountedTotalPrice,
+        originalTotalPrice: pricing.localOriginalTotalPrice,
+        discountedTotalPrice: localDiscountedTotalPrice,
+        localOriginalTotalPrice: pricing.localOriginalTotalPrice,
+        internationalOriginalTotalPrice: pricing.internationalOriginalTotalPrice,
+        localDiscountedTotalPrice,
+        internationalDiscountedTotalPrice,
         currency: updateOfferDto.currency,
-        ...(shouldResubmit
-          ? {
-              status: BillboardStatus.PENDING_APPROVAL,
-              approvedAt: null,
-              rejectionReason: null,
-            }
-          : {}),
+        status: BillboardStatus.APPROVED,
+        rejectionReason: null,
+        approvedAt: offer.approvedAt ?? new Date(),
       },
       pricing.items,
     );
-
-    if (shouldResubmit) {
-      await this.notifyOfferSubmitted(id);
-    }
 
     return this.withOfferDiscountAmount(updatedOffer);
   }
@@ -1129,7 +1155,10 @@ export class BillboardsService {
       this.ensureValidDateRange(item.startDate, item.endDate),
     );
 
-    const resolvedItems = await this.resolveBookingItems(createBookingDto.items);
+    const resolvedItems = await this.resolveBookingItems(
+      createBookingDto.items,
+      createBookingDto.customerCompanyScope,
+    );
     const conflicts = await this.findAvailabilityConflictsForResolvedItems(
       resolvedItems,
     );
@@ -1194,6 +1223,7 @@ export class BillboardsService {
       ],
       customerCompany: createBookingDto.customerCompany,
       customerNotes: createBookingDto.customerNotes,
+      customerCompanyScope: createBookingDto.customerCompanyScope,
     });
   }
 
@@ -1525,9 +1555,43 @@ export class BillboardsService {
   private buildPublicWhere(
     query: PublicQueryBillboardsDto = new PublicQueryBillboardsDto(),
   ): Prisma.BillboardWhereInput {
+    const and: Prisma.BillboardWhereInput[] = [];
+
+    if (query.minPrice !== undefined || query.maxPrice !== undefined) {
+      and.push({
+        OR: [
+          {
+            localPrice: {
+              ...(query.minPrice !== undefined ? { gte: query.minPrice } : {}),
+              ...(query.maxPrice !== undefined ? { lte: query.maxPrice } : {}),
+            },
+          },
+          {
+            internationalPrice: {
+              ...(query.minPrice !== undefined ? { gte: query.minPrice } : {}),
+              ...(query.maxPrice !== undefined ? { lte: query.maxPrice } : {}),
+            },
+          },
+        ],
+      });
+    }
+
+    if (query.search) {
+      and.push({
+        OR: [
+          { title: { contains: query.search, mode: 'insensitive' } },
+          { country: { contains: query.search, mode: 'insensitive' } },
+          { province: { contains: query.search, mode: 'insensitive' } },
+          { city: { contains: query.search, mode: 'insensitive' } },
+          { addressText: { contains: query.search, mode: 'insensitive' } },
+        ],
+      });
+    }
+
     return {
       status: BillboardStatus.APPROVED,
       deletedAt: null,
+      ...(and.length > 0 ? { AND: and } : {}),
       company: {
         status: 'ACTIVE',
         deletedAt: null,
@@ -1546,14 +1610,6 @@ export class BillboardsService {
         ? { hasLighting: query.hasLighting }
         : {}),
       ...(query.pricingUnit ? { pricingUnit: query.pricingUnit } : {}),
-      ...(query.minPrice !== undefined || query.maxPrice !== undefined
-        ? {
-            price: {
-              ...(query.minPrice !== undefined ? { gte: query.minPrice } : {}),
-              ...(query.maxPrice !== undefined ? { lte: query.maxPrice } : {}),
-            },
-          }
-        : {}),
       ...(query.minWidth !== undefined || query.maxWidth !== undefined
         ? {
             width: {
@@ -1572,17 +1628,6 @@ export class BillboardsService {
                 ? { lte: query.maxHeight }
                 : {}),
             },
-          }
-        : {}),
-      ...(query.search
-        ? {
-            OR: [
-              { title: { contains: query.search, mode: 'insensitive' } },
-              { country: { contains: query.search, mode: 'insensitive' } },
-              { province: { contains: query.search, mode: 'insensitive' } },
-              { city: { contains: query.search, mode: 'insensitive' } },
-              { addressText: { contains: query.search, mode: 'insensitive' } },
-            ],
           }
         : {}),
     };
@@ -1722,7 +1767,8 @@ export class BillboardsService {
   private async calculateOfferPricing(
     companyId: string,
     billboardIds: string[],
-    discountedTotalPrice: number,
+    localDiscountedTotalPrice: number,
+    internationalDiscountedTotalPrice: number,
   ) {
     const billboards = await this.billboardsRepository.findCompanyBillboardsForOffer(
       companyId,
@@ -1736,26 +1782,40 @@ export class BillboardsService {
     }
 
     const items = billboards.map((billboard) => {
-      if (billboard.price === null) {
+      if (billboard.status !== BillboardStatus.APPROVED) {
         throw new BadRequestException(
-          'All offer billboards must have a price',
+          'All offer billboards must be approved',
         );
       }
 
       return {
         billboardId: billboard.id,
-        priceSnapshot: Number(billboard.price),
+        priceSnapshot: Number(billboard.localPrice),
+        localPriceSnapshot: Number(billboard.localPrice),
+        internationalPriceSnapshot: Number(billboard.internationalPrice),
       };
     });
-    const originalTotalPrice = items.reduce(
-      (total, item) => total + Number(item.priceSnapshot),
+    const localOriginalTotalPrice = items.reduce(
+      (total, item) => total + Number(item.localPriceSnapshot),
+      0,
+    );
+    const internationalOriginalTotalPrice = items.reduce(
+      (total, item) => total + Number(item.internationalPriceSnapshot),
       0,
     );
 
-    this.ensureOfferDiscountIsValid(originalTotalPrice, discountedTotalPrice);
+    this.ensureOfferDiscountIsValid(
+      localOriginalTotalPrice,
+      localDiscountedTotalPrice,
+    );
+    this.ensureOfferDiscountIsValid(
+      internationalOriginalTotalPrice,
+      internationalDiscountedTotalPrice,
+    );
 
     return {
-      originalTotalPrice,
+      localOriginalTotalPrice,
+      internationalOriginalTotalPrice,
       items,
     };
   }
@@ -1841,10 +1901,13 @@ export class BillboardsService {
         printedSubtype: defaults.printedSubtype,
         hasLighting: defaults.hasLighting ?? false,
         lightingPrice: defaults.lightingPrice,
-        price: defaults.price,
+        price: defaults.price ?? defaults.localPrice,
+        localPrice: defaults.localPrice,
+        internationalPrice: defaults.internationalPrice,
         pricingUnit: defaults.pricingUnit ?? 'MONTH',
         currency: defaults.currency ?? 'USD',
         taxRatePercent: defaults.taxRatePercent ?? 0,
+        displayDurationSeconds: defaults.displayDurationSeconds,
         status,
         isPackageOnly: true,
       };
@@ -1864,6 +1927,40 @@ export class BillboardsService {
     ) {
       throw new BadRequestException(
         'Package start and end coordinates cannot be identical',
+      );
+    }
+  }
+
+  private ensureBillboardBusinessRules(billboard: {
+    type: BillboardType;
+    printedSubtype?: unknown;
+    pricingUnit?: PricingUnit;
+    displayDurationSeconds?: number;
+  }): void {
+    if (
+      billboard.printedSubtype !== undefined &&
+      billboard.type !== BillboardType.PRINTED
+    ) {
+      throw new BadRequestException(
+        'printedSubtype is only valid for PRINTED billboards',
+      );
+    }
+
+    if (
+      billboard.pricingUnit === PricingUnit.HOUR &&
+      billboard.type !== BillboardType.CAR_AD
+    ) {
+      throw new BadRequestException(
+        'pricingUnit HOUR is only valid for CAR_AD billboards',
+      );
+    }
+
+    if (
+      billboard.displayDurationSeconds !== undefined &&
+      billboard.type !== BillboardType.DIGITAL
+    ) {
+      throw new BadRequestException(
+        'displayDurationSeconds is only valid for DIGITAL billboards',
       );
     }
   }
@@ -1888,6 +1985,15 @@ export class BillboardsService {
     ) {
       throw new BadRequestException(
         'pricingUnit HOUR is only valid for CAR_AD billboards',
+      );
+    }
+
+    if (
+      defaults.displayDurationSeconds !== undefined &&
+      defaults.type !== BillboardType.DIGITAL
+    ) {
+      throw new BadRequestException(
+        'displayDurationSeconds is only valid for DIGITAL billboards',
       );
     }
   }
@@ -1962,6 +2068,7 @@ export class BillboardsService {
 
   private async resolveBookingItems(
     items: CreateBookingItemDto[],
+    customerCompanyScope: CustomerCompanyScope,
   ): Promise<ResolvedBookingItem[]> {
     const billboardIds = items
       .filter((item) => item.itemType === BookingItemType.BILLBOARD)
@@ -1997,7 +2104,11 @@ export class BillboardsService {
           throw new NotFoundException('Billboard is not available for booking');
         }
 
-        return this.resolveBillboardBookingItem(item, billboard);
+        return this.resolveBillboardBookingItem(
+          item,
+          billboard,
+          customerCompanyScope,
+        );
       }
 
       if (item.itemType === BookingItemType.ROAD_PACKAGE) {
@@ -2019,6 +2130,7 @@ export class BillboardsService {
           item,
           roadPackage.companyId,
           roadPackage.billboards,
+          customerCompanyScope,
         );
       }
 
@@ -2032,15 +2144,16 @@ export class BillboardsService {
         throw new NotFoundException('Offer is not available for booking');
       }
 
-      return this.resolveOfferBookingItem(item, offer);
+      return this.resolveOfferBookingItem(item, offer, customerCompanyScope);
     });
   }
 
   private resolveBillboardBookingItem(
     item: CreateBookingItemDto,
     billboard: BookingBillboardSnapshot,
+    customerCompanyScope: CustomerCompanyScope,
   ): ResolvedBookingItem {
-    const price = this.requireBillboardPrice(billboard);
+    const price = this.resolveBillboardPrice(billboard, customerCompanyScope);
     const taxRatePercent = Number(billboard.taxRatePercent);
     const taxAmount = this.calculateTax(price, taxRatePercent);
 
@@ -2049,6 +2162,9 @@ export class BillboardsService {
       companyId: billboard.companyId,
       billboardIds: [billboard.id],
       priceSnapshot: price,
+      selectedCustomerCompanyScope: customerCompanyScope,
+      localPriceSnapshot: Number(billboard.localPrice),
+      internationalPriceSnapshot: Number(billboard.internationalPrice),
       pricingUnit: billboard.pricingUnit,
       currency: billboard.currency,
       taxRatePercent,
@@ -2062,13 +2178,18 @@ export class BillboardsService {
     item: CreateBookingItemDto,
     companyId: string,
     billboards: BookingBillboardSnapshot[],
+    customerCompanyScope: CustomerCompanyScope,
   ): ResolvedBookingItem {
     const firstBillboard = billboards[0];
     let totalBeforeTax = 0;
     let taxAmount = 0;
+    let localPriceSnapshot = 0;
+    let internationalPriceSnapshot = 0;
 
     for (const billboard of billboards) {
-      const price = this.requireBillboardPrice(billboard);
+      const price = this.resolveBillboardPrice(billboard, customerCompanyScope);
+      localPriceSnapshot += Number(billboard.localPrice);
+      internationalPriceSnapshot += Number(billboard.internationalPrice);
       totalBeforeTax += price;
       taxAmount += this.calculateTax(price, Number(billboard.taxRatePercent));
     }
@@ -2078,6 +2199,9 @@ export class BillboardsService {
       companyId,
       billboardIds: billboards.map((billboard) => billboard.id),
       priceSnapshot: totalBeforeTax,
+      selectedCustomerCompanyScope: customerCompanyScope,
+      localPriceSnapshot,
+      internationalPriceSnapshot,
       pricingUnit: firstBillboard.pricingUnit,
       currency: firstBillboard.currency,
       taxRatePercent: 0,
@@ -2093,18 +2217,33 @@ export class BillboardsService {
       companyId: string;
       originalTotalPrice: Prisma.Decimal;
       discountedTotalPrice: Prisma.Decimal;
+      localOriginalTotalPrice: Prisma.Decimal;
+      internationalOriginalTotalPrice: Prisma.Decimal;
+      localDiscountedTotalPrice: Prisma.Decimal;
+      internationalDiscountedTotalPrice: Prisma.Decimal;
       currency: string;
       items: { billboard: BookingBillboardSnapshot; priceSnapshot: Prisma.Decimal | null }[];
     },
+    customerCompanyScope: CustomerCompanyScope,
   ): ResolvedBookingItem {
-    const originalTotalPrice = Number(offer.originalTotalPrice);
-    const discountedTotalPrice = Number(offer.discountedTotalPrice);
+    const originalTotalPrice =
+      customerCompanyScope === CustomerCompanyScope.LOCAL
+        ? Number(offer.localOriginalTotalPrice)
+        : Number(offer.internationalOriginalTotalPrice);
+    const discountedTotalPrice =
+      customerCompanyScope === CustomerCompanyScope.LOCAL
+        ? Number(offer.localDiscountedTotalPrice)
+        : Number(offer.internationalDiscountedTotalPrice);
     const discountRatio =
       originalTotalPrice > 0 ? discountedTotalPrice / originalTotalPrice : 0;
     let taxAmount = 0;
+    let localPriceSnapshot = 0;
+    let internationalPriceSnapshot = 0;
 
     for (const item of offer.items) {
-      const price = this.requireBillboardPrice(item.billboard);
+      const price = this.resolveBillboardPrice(item.billboard, customerCompanyScope);
+      localPriceSnapshot += Number(item.billboard.localPrice);
+      internationalPriceSnapshot += Number(item.billboard.internationalPrice);
       taxAmount += this.calculateTax(
         price * discountRatio,
         Number(item.billboard.taxRatePercent),
@@ -2116,6 +2255,9 @@ export class BillboardsService {
       companyId: offer.companyId,
       billboardIds: offer.items.map((offerItem) => offerItem.billboard.id),
       priceSnapshot: discountedTotalPrice,
+      selectedCustomerCompanyScope: customerCompanyScope,
+      localPriceSnapshot,
+      internationalPriceSnapshot,
       pricingUnit: PricingUnit.CUSTOM,
       currency: offer.currency,
       taxRatePercent: 0,
@@ -2301,6 +2443,9 @@ export class BillboardsService {
       totalBeforeTax: item.totalBeforeTax,
       totalAfterTax: item.totalAfterTax,
       discountAmount: item.discountAmount,
+      selectedCustomerCompanyScope: item.selectedCustomerCompanyScope,
+      localPriceSnapshot: item.localPriceSnapshot,
+      internationalPriceSnapshot: item.internationalPriceSnapshot,
     };
   }
 
@@ -2311,6 +2456,7 @@ export class BillboardsService {
     offerId?: string | null;
     startDate: Date;
     endDate: Date;
+    selectedCustomerCompanyScope?: CustomerCompanyScope | null;
   }) {
     const [resolvedItem] = await this.resolveBookingItems([
       {
@@ -2321,7 +2467,7 @@ export class BillboardsService {
         startDate: item.startDate,
         endDate: item.endDate,
       },
-    ]);
+    ], item.selectedCustomerCompanyScope ?? CustomerCompanyScope.LOCAL);
 
     return resolvedItem;
   }
@@ -2347,6 +2493,17 @@ export class BillboardsService {
       ...offer,
       discountAmount:
         Number(offer.originalTotalPrice) - Number(offer.discountedTotalPrice),
+      localDiscountAmount:
+        Number(offer.localOriginalTotalPrice ?? offer.originalTotalPrice) -
+        Number(offer.localDiscountedTotalPrice ?? offer.discountedTotalPrice),
+      internationalDiscountAmount:
+        Number(
+          offer.internationalOriginalTotalPrice ?? offer.originalTotalPrice,
+        ) -
+        Number(
+          offer.internationalDiscountedTotalPrice ??
+            offer.discountedTotalPrice,
+        ),
     };
   }
 
@@ -2464,12 +2621,19 @@ export class BillboardsService {
     return new Date(Math.max(...dates.map((date) => date.getTime())));
   }
 
-  private requireBillboardPrice(billboard: BookingBillboardSnapshot): number {
-    if (billboard.price === null) {
-      throw new BadRequestException('All selected billboards must have a price');
+  private resolveBillboardPrice(
+    billboard: BookingBillboardSnapshot,
+    customerCompanyScope: CustomerCompanyScope,
+  ): number {
+    if (customerCompanyScope === CustomerCompanyScope.LOCAL) {
+      return Number(billboard.localPrice);
     }
 
-    return Number(billboard.price);
+    if (customerCompanyScope === CustomerCompanyScope.INTERNATIONAL) {
+      return Number(billboard.internationalPrice);
+    }
+
+    throw new BadRequestException('customerCompanyScope is required for pricing');
   }
 
   private calculateTax(amount: number, taxRatePercent: number): number {

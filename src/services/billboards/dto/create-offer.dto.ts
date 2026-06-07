@@ -9,6 +9,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Min,
 } from 'class-validator';
 
 export class CreateOfferDto {
@@ -28,8 +29,19 @@ export class CreateOfferDto {
   endsAt: Date;
 
   @Type(() => Number)
+  @IsOptional()
   @IsNumber()
-  discountedTotalPrice: number;
+  discountedTotalPrice?: number;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  localDiscountedTotalPrice: number;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  internationalDiscountedTotalPrice: number;
 
   @IsOptional()
   @IsString()

@@ -43,11 +43,6 @@ export class PartnerOffersController {
     return this.billboardsService.updatePartnerOffer(user, id, updateOfferDto);
   }
 
-  @Patch(':id/submit')
-  submit(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
-    return this.billboardsService.submitPartnerOffer(user, id);
-  }
-
   @Delete(':id')
   remove(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.billboardsService.deletePartnerOffer(user, id);

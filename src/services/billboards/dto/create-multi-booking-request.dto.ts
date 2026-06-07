@@ -56,9 +56,8 @@ export class CreateMultiBookingRequestDto {
   @IsString()
   customerNotes?: string;
 
-  @IsOptional()
   @IsEnum(CustomerCompanyScope)
-  customerCompanyScope?: CustomerCompanyScope;
+  customerCompanyScope: CustomerCompanyScope;
 
   @IsOptional()
   @IsEnum(CustomerSector)
