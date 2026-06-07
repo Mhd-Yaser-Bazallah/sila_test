@@ -105,6 +105,30 @@ export class UpdateBillboardDto {
   @Min(0)
   internationalPrice?: number;
 
+  @Type(() => Number)
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  localFlexPrice?: number;
+
+  @Type(() => Number)
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  internationalFlexPrice?: number;
+
+  @Type(() => Number)
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  localStandardAddedValue?: number;
+
+  @Type(() => Number)
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  internationalStandardAddedValue?: number;
+
   @IsOptional()
   @IsEnum(PricingUnit)
   @Validate(HourPricingMatchesTypeConstraint)

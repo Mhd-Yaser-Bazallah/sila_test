@@ -64,14 +64,40 @@ export class RoadPackageBillboardDefaultsDto {
   lightingPrice?: number;
 
   @Type(() => Number)
+  @IsOptional()
   @IsNumber()
   @Min(0)
-  localPrice: number;
+  localPrice?: number;
 
   @Type(() => Number)
+  @IsOptional()
   @IsNumber()
   @Min(0)
-  internationalPrice: number;
+  internationalPrice?: number;
+
+  @Type(() => Number)
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  localFlexPrice?: number;
+
+  @Type(() => Number)
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  internationalFlexPrice?: number;
+
+  @Type(() => Number)
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  localStandardAddedValue?: number;
+
+  @Type(() => Number)
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  internationalStandardAddedValue?: number;
 
   @Type(() => Number)
   @IsOptional()

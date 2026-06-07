@@ -18,6 +18,7 @@ import {
   MediaType,
   NotificationType,
   PricingUnit,
+  PrintedSubtype,
   Prisma,
   ServiceSubscriptionStatus,
   ServiceType,
@@ -145,9 +146,11 @@ export class BillboardsService {
     const companyId = await this.getPartnerCompanyIdWithSubscription(user);
     const { submitForApproval, ...billboardData } = createBillboardDto;
     this.ensureBillboardBusinessRules(billboardData);
+    const pricingData = this.computeBillboardScopedPrices(billboardData);
 
     const billboard = await this.billboardsRepository.createBillboard({
       ...billboardData,
+      ...pricingData,
       status: submitForApproval
         ? BillboardStatus.PENDING_APPROVAL
         : BillboardStatus.DRAFT,
@@ -196,21 +199,65 @@ export class BillboardsService {
     updateBillboardDto: UpdateBillboardDto,
   ) {
     const billboard = await this.findPartnerBillboard(user, id);
-    this.ensureBillboardBusinessRules({
-      type: updateBillboardDto.type ?? billboard.type,
+    const effectiveType = updateBillboardDto.type ?? billboard.type;
+    const effectiveBillboard = {
+      type: effectiveType,
       printedSubtype:
-        updateBillboardDto.printedSubtype ?? billboard.printedSubtype ?? undefined,
+        effectiveType === BillboardType.PRINTED
+          ? updateBillboardDto.printedSubtype ??
+            billboard.printedSubtype ??
+            undefined
+          : undefined,
       pricingUnit: updateBillboardDto.pricingUnit ?? billboard.pricingUnit,
       displayDurationSeconds:
         updateBillboardDto.displayDurationSeconds ??
-        billboard.displayDurationSeconds ??
-        undefined,
-    });
+        (effectiveType === BillboardType.DIGITAL
+          ? billboard.displayDurationSeconds ?? undefined
+          : undefined),
+      localPrice: updateBillboardDto.localPrice ?? Number(billboard.localPrice),
+      internationalPrice:
+        updateBillboardDto.internationalPrice ??
+        Number(billboard.internationalPrice),
+      localFlexPrice:
+        effectiveType === BillboardType.PRINTED
+          ? updateBillboardDto.localFlexPrice ??
+            (billboard.localFlexPrice === null
+              ? undefined
+              : Number(billboard.localFlexPrice))
+          : undefined,
+      internationalFlexPrice:
+        effectiveType === BillboardType.PRINTED
+          ? updateBillboardDto.internationalFlexPrice ??
+            (billboard.internationalFlexPrice === null
+              ? undefined
+              : Number(billboard.internationalFlexPrice))
+          : undefined,
+      localStandardAddedValue:
+        effectiveType === BillboardType.PRINTED
+          ? updateBillboardDto.localStandardAddedValue ??
+            (billboard.localStandardAddedValue === null
+              ? undefined
+              : Number(billboard.localStandardAddedValue))
+          : undefined,
+      internationalStandardAddedValue:
+        effectiveType === BillboardType.PRINTED
+          ? updateBillboardDto.internationalStandardAddedValue ??
+            (billboard.internationalStandardAddedValue === null
+              ? undefined
+              : Number(billboard.internationalStandardAddedValue))
+          : undefined,
+    };
+    this.ensureBillboardBusinessRules(effectiveBillboard);
+    const pricingData = this.computeBillboardScopedPrices(effectiveBillboard);
 
     const updatedBillboard = await this.billboardsRepository.updateBillboard(
       id,
       {
         ...updateBillboardDto,
+        ...pricingData,
+        ...(effectiveType !== BillboardType.DIGITAL
+          ? { displayDurationSeconds: null }
+          : {}),
         ...(billboard.status === BillboardStatus.APPROVED
           ? {
               status: BillboardStatus.PENDING_APPROVAL,
@@ -1870,6 +1917,7 @@ export class BillboardsService {
     status: BillboardStatus,
   ): Prisma.BillboardUncheckedCreateInput[] {
     const defaults = createPackageDto.billboardDefaults;
+    const pricingData = this.computeBillboardScopedPrices(defaults);
 
     return Array.from({ length: createPackageDto.billboardsCount }, (_, i) => {
       const boardNumber = i + 1;
@@ -1898,12 +1946,10 @@ export class BillboardsService {
         height: defaults.height,
         type: defaults.type,
         direction: createPackageDto.direction,
-        printedSubtype: defaults.printedSubtype,
         hasLighting: defaults.hasLighting ?? false,
         lightingPrice: defaults.lightingPrice,
-        price: defaults.price ?? defaults.localPrice,
-        localPrice: defaults.localPrice,
-        internationalPrice: defaults.internationalPrice,
+        price: defaults.price ?? pricingData.localPrice,
+        ...pricingData,
         pricingUnit: defaults.pricingUnit ?? 'MONTH',
         currency: defaults.currency ?? 'USD',
         taxRatePercent: defaults.taxRatePercent ?? 0,
@@ -1936,6 +1982,10 @@ export class BillboardsService {
     printedSubtype?: unknown;
     pricingUnit?: PricingUnit;
     displayDurationSeconds?: number;
+    localFlexPrice?: number;
+    internationalFlexPrice?: number;
+    localStandardAddedValue?: number;
+    internationalStandardAddedValue?: number;
   }): void {
     if (
       billboard.printedSubtype !== undefined &&
@@ -1963,6 +2013,101 @@ export class BillboardsService {
         'displayDurationSeconds is only valid for DIGITAL billboards',
       );
     }
+
+    const hasPrintedComponent =
+      billboard.localFlexPrice !== undefined ||
+      billboard.internationalFlexPrice !== undefined ||
+      billboard.localStandardAddedValue !== undefined ||
+      billboard.internationalStandardAddedValue !== undefined;
+
+    if (hasPrintedComponent && billboard.type !== BillboardType.PRINTED) {
+      throw new BadRequestException(
+        'Printed pricing components are only valid for PRINTED billboards',
+      );
+    }
+  }
+
+  private computeBillboardScopedPrices(billboard: {
+    type: BillboardType;
+    printedSubtype?: PrintedSubtype | null;
+    localPrice?: number;
+    internationalPrice?: number;
+    localFlexPrice?: number;
+    internationalFlexPrice?: number;
+    localStandardAddedValue?: number;
+    internationalStandardAddedValue?: number;
+  }): {
+    printedSubtype: PrintedSubtype | null;
+    localPrice: number;
+    internationalPrice: number;
+    localFlexPrice: number | null;
+    internationalFlexPrice: number | null;
+    localStandardAddedValue: number | null;
+    internationalStandardAddedValue: number | null;
+  } {
+    if (billboard.type !== BillboardType.PRINTED) {
+      if (
+        billboard.localPrice === undefined ||
+        billboard.internationalPrice === undefined
+      ) {
+        throw new BadRequestException(
+          'localPrice and internationalPrice are required for non-PRINTED billboards',
+        );
+      }
+
+      return {
+        printedSubtype: null,
+        localPrice: billboard.localPrice,
+        internationalPrice: billboard.internationalPrice,
+        localFlexPrice: null,
+        internationalFlexPrice: null,
+        localStandardAddedValue: null,
+        internationalStandardAddedValue: null,
+      };
+    }
+
+    const printedSubtype =
+      billboard.printedSubtype ?? PrintedSubtype.FLEX;
+
+    if (
+      billboard.localFlexPrice === undefined ||
+      billboard.internationalFlexPrice === undefined
+    ) {
+      throw new BadRequestException(
+        'localFlexPrice and internationalFlexPrice are required for PRINTED billboards',
+      );
+    }
+
+    const localStandardAddedValue =
+      billboard.localStandardAddedValue ?? 0;
+    const internationalStandardAddedValue =
+      billboard.internationalStandardAddedValue ?? 0;
+
+    if (
+      printedSubtype === PrintedSubtype.STANDARD &&
+      (billboard.localStandardAddedValue === undefined ||
+        billboard.internationalStandardAddedValue === undefined)
+    ) {
+      throw new BadRequestException(
+        'localStandardAddedValue and internationalStandardAddedValue are required for STANDARD printed billboards',
+      );
+    }
+
+    return {
+      printedSubtype,
+      localPrice:
+        printedSubtype === PrintedSubtype.STANDARD
+          ? billboard.localFlexPrice + localStandardAddedValue
+          : billboard.localFlexPrice,
+      internationalPrice:
+        printedSubtype === PrintedSubtype.STANDARD
+          ? billboard.internationalFlexPrice + internationalStandardAddedValue
+          : billboard.internationalFlexPrice,
+      localFlexPrice: billboard.localFlexPrice,
+      internationalFlexPrice: billboard.internationalFlexPrice,
+      localStandardAddedValue,
+      internationalStandardAddedValue,
+    };
   }
 
   private ensureRoadPackageBillboardDefaults(

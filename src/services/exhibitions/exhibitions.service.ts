@@ -269,6 +269,7 @@ export class ExhibitionsService {
         price: createBoothDto.price ?? createBoothDto.localPrice,
         localPrice: createBoothDto.localPrice,
         internationalPrice: createBoothDto.internationalPrice,
+        setupPrice: createBoothDto.setupPrice ?? 0,
         currency: createBoothDto.currency ?? 'USD',
         status: createBoothDto.status ?? ExhibitionBoothStatus.AVAILABLE,
         shape: createBoothDto.shape,
@@ -336,7 +337,8 @@ export class ExhibitionsService {
 
     const subtotalBeforeTax = booths.reduce(
       (total, booth) =>
-        total + this.resolveBoothPrice(booth, createBookingDto.customerCompanyScope),
+        total +
+        this.resolveBoothPrice(booth, createBookingDto.customerCompanyScope),
       0,
     );
     const totalTaxAmount = 0;
@@ -369,6 +371,7 @@ export class ExhibitionsService {
           ),
           localPriceSnapshot: booth.localPrice,
           internationalPriceSnapshot: booth.internationalPrice,
+          setupPriceSnapshot: booth.setupPrice,
           currency: booth.currency,
         })),
       });
@@ -951,6 +954,7 @@ export class ExhibitionsService {
         price: createBoothDto.price ?? createBoothDto.localPrice,
         localPrice: createBoothDto.localPrice,
         internationalPrice: createBoothDto.internationalPrice,
+        setupPrice: createBoothDto.setupPrice ?? 0,
         currency: createBoothDto.currency ?? 'USD',
         status: createBoothDto.status ?? ExhibitionBoothStatus.AVAILABLE,
         shape: createBoothDto.shape,
@@ -1527,6 +1531,7 @@ export class ExhibitionsService {
       updateBoothDto.price !== undefined ||
       updateBoothDto.localPrice !== undefined ||
       updateBoothDto.internationalPrice !== undefined ||
+      updateBoothDto.setupPrice !== undefined ||
       updateBoothDto.coordinates !== undefined ||
       updateBoothDto.shape !== undefined ||
       'sectorId' in updateBoothDto ||
@@ -1581,15 +1586,16 @@ export class ExhibitionsService {
     booth: {
       localPrice: Prisma.Decimal | number;
       internationalPrice: Prisma.Decimal | number;
+      setupPrice: Prisma.Decimal | number;
     },
     customerCompanyScope: CustomerCompanyScope,
   ): number {
     if (customerCompanyScope === CustomerCompanyScope.LOCAL) {
-      return Number(booth.localPrice);
+      return Number(booth.localPrice) + Number(booth.setupPrice);
     }
 
     if (customerCompanyScope === CustomerCompanyScope.INTERNATIONAL) {
-      return Number(booth.internationalPrice);
+      return Number(booth.internationalPrice) + Number(booth.setupPrice);
     }
 
     throw new BadRequestException('customerCompanyScope is required for pricing');
@@ -1606,6 +1612,7 @@ export class ExhibitionsService {
       price: updateBoothDto.price,
       localPrice: updateBoothDto.localPrice,
       internationalPrice: updateBoothDto.internationalPrice,
+      setupPrice: updateBoothDto.setupPrice,
       currency: updateBoothDto.currency,
       status: updateBoothDto.status,
       shape: updateBoothDto.shape,
@@ -1631,6 +1638,7 @@ export class ExhibitionsService {
       price: createBoothDto.price ?? createBoothDto.localPrice,
       localPrice: createBoothDto.localPrice,
       internationalPrice: createBoothDto.internationalPrice,
+      setupPrice: createBoothDto.setupPrice ?? 0,
       currency: createBoothDto.currency ?? 'USD',
       status: createBoothDto.status ?? ExhibitionBoothStatus.AVAILABLE,
       shape: createBoothDto.shape,

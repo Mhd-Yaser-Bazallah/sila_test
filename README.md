@@ -332,7 +332,7 @@ Super admins can review exhibitions, approve or reject submissions, archive exhi
 
 Exhibition booth booking is request-based. Customers can request one or many available booths from an approved public exhibition. Partner companies approve or reject individual booth booking items; approval marks the booth as `BOOKED`, while rejection keeps it `AVAILABLE`. Admin exhibition booking endpoints are monitoring-only.
 
-`BOOKED` booths cannot be deleted. Company admins may update only descriptive booth fields on booked booths: title, description, color, area, and sort order. Geometry, coordinates, price, currency, sector, code, and status cannot be changed once a booth is booked.
+`BOOKED` booths cannot be deleted. Company admins may update only descriptive booth fields on booked booths: title, description, color, area, and sort order. Geometry, coordinates, price, setup price, currency, sector, code, and status cannot be changed once a booth is booked.
 
 ## Booking Notes
 
@@ -352,12 +352,14 @@ Exhibition booth booking is request-based. Customers can request one or many ava
 ## Pricing Rules
 
 - Billboards and exhibition booths use `localPrice` and `internationalPrice`; the legacy `price` field remains only for backward compatibility.
+- PRINTED billboard final scoped prices are computed from printed components. `FLEX` uses `localFlexPrice` / `internationalFlexPrice` directly. `STANDARD` uses flex price plus `localStandardAddedValue` / `internationalStandardAddedValue`. The computed final `localPrice` / `internationalPrice` values are stored and used by public search, offers, road-package booking, and billboard booking.
 - Public billboard `minPrice` / `maxPrice` filters match either scoped price.
 - Road packages and offers are booked as one logical booking item, while availability still checks the underlying billboards.
 - Offer original totals are calculated separately for local and international billboard prices. Partner offer create/update accepts `localDiscountedTotalPrice` and `internationalDiscountedTotalPrice`.
 - Offers no longer require admin approval. Partner-created offers become `APPROVED` immediately when all included billboards are approved, and public offer visibility still depends on approved status plus the offer date range.
 - DIGITAL billboards may include `displayDurationSeconds`; that field is invalid for non-digital billboards.
 - `pricingUnit: HOUR` remains valid only for `CAR_AD`, and `printedSubtype` remains valid only for `PRINTED`.
+- Exhibition booths may include `setupPrice`. Customer exhibition booking uses the selected scoped booth price plus `setupPrice`, and booking items snapshot both the selected final price and setup price.
 
 ## Useful Scripts
 

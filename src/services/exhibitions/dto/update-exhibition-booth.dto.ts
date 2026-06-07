@@ -47,6 +47,12 @@ export class UpdateExhibitionBoothDto {
   @Min(0)
   internationalPrice?: number;
 
+  @Type(() => Number)
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  setupPrice?: number;
+
   @IsOptional()
   @IsString()
   currency?: string;
