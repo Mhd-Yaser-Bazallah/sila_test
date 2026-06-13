@@ -176,6 +176,60 @@ Partner/company user. Can manage only their own company billboards, road package
 
 Customer user. Can browse public billboards, offers, and exhibitions, check availability, create multi-item booking requests, book exhibition booths, view their own bookings, and manage their own profile.
 
+`INSTALLER`
+
+Company installation staff user. Belongs to one company, logs in with normal JWT auth, sees only assigned billboard installation work, starts assignments, and uploads proof images after installation.
+
+## Billboard Installation Workflow
+
+The billboard installation workflow belongs to the Billboards / Outdoor Advertising domain only. It is implemented under `src/services/billboards` and does not affect exhibitions.
+
+When a company admin approves a billboard booking item, the backend creates `BillboardInstallationUnit` records idempotently:
+
+- `BILLBOARD`: one installation unit for the booked billboard.
+- `ROAD_PACKAGE`: one installation unit for each underlying billboard in the package.
+- `OFFER`: one installation unit for each underlying billboard in the offer.
+
+Each installation unit represents one real billboard that needs its own customer creative. A customer who booked a package or offer must upload creative separately for every underlying billboard unit.
+
+Customer creative endpoints:
+
+- `GET /api/v1/customer/bookings/:bookingId/installation-units`
+- `POST /api/v1/customer/installation-units/:unitId/creative/upload`
+- `PATCH /api/v1/customer/installation-units/:unitId/creative`
+
+Creative uploads use Fastify multipart, not multer. Files are stored under `uploads/billboards/creatives`. `creativeImage` supports JPEG, PNG, and WebP. `creativeFile` supports JPEG, PNG, WebP, and PDF. URL-based creative updates are also supported.
+
+Company admin installer management:
+
+- `POST /api/v1/partner/installers`
+- `GET /api/v1/partner/installers`
+- `GET /api/v1/partner/installers/:id`
+- `PATCH /api/v1/partner/installers/:id`
+- `DELETE /api/v1/partner/installers/:id`
+
+Company admins can create active `INSTALLER` users only for their own company and only when the company has an active Billboards subscription.
+
+Company admin installation review endpoints:
+
+- `GET /api/v1/partner/installation-units`
+- `GET /api/v1/partner/installation-units/:id`
+- `POST /api/v1/partner/installation-units/:unitId/assignments`
+- `PATCH /api/v1/partner/installation-units/:unitId/approve`
+- `PATCH /api/v1/partner/installation-units/:unitId/request-revision`
+
+Company admins assign one or more installers to a ready unit. After installers submit proof, the company admin approves the unit or requests revision with notes.
+
+Installer dashboard endpoints:
+
+- `GET /api/v1/installer/assignments`
+- `GET /api/v1/installer/assignments/:id`
+- `PATCH /api/v1/installer/assignments/:id/start`
+- `POST /api/v1/installer/assignments/:id/evidence/upload`
+- `POST /api/v1/installer/assignments/:id/evidence`
+
+Installer proof uploads use Fastify multipart and are stored under `uploads/billboards/installations`. Installers can upload 1 to 10 JPEG, PNG, or WebP images. Installer responses include billboard details, booking IDs, creative URLs, and notes, but avoid customer private email and phone data.
+
 ## Main API Groups
 
 - Auth
@@ -194,6 +248,10 @@ Customer user. Can browse public billboards, offers, and exhibitions, check avai
 - Availability
 - Customer Bookings
 - Partner Booking Items
+- Partner Installers
+- Customer Installation Units
+- Partner Installation Units
+- Installer Assignments
 - Admin Bookings
 - Notifications
 

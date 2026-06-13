@@ -10,6 +10,7 @@ enum UserRole {
   SUPER_ADMIN
   COMPANY_ADMIN
   CUSTOMER
+  INSTALLER
 }
 
 enum UserStatus {
@@ -146,6 +147,31 @@ enum BookingItemType {
   OFFER
 }
 
+enum InstallationUnitStatus {
+  PENDING_CREATIVE
+  READY_FOR_ASSIGNMENT
+  ASSIGNED
+  IN_PROGRESS
+  SUBMITTED
+  REVISION_REQUIRED
+  APPROVED
+  CANCELLED
+}
+
+enum InstallationAssignmentStatus {
+  ASSIGNED
+  IN_PROGRESS
+  SUBMITTED
+  REVISION_REQUIRED
+  APPROVED
+  CANCELLED
+}
+
+enum InstallationEvidenceType {
+  IMAGE
+  FILE
+}
+
 enum NotificationType {
   BILLBOARD_SUBMITTED
   BOOKING_REQUEST_CREATED
@@ -171,6 +197,9 @@ model User {
   bookingRequests BookingRequest[]
   exhibitionBookingRequests ExhibitionBookingRequest[]
   notifications   Notification[]
+  installationAssignments BillboardInstallationAssignment[] @relation("InstallerAssignments")
+  assignedInstallationAssignments BillboardInstallationAssignment[] @relation("AssignedInstallationAssignments")
+  installationEvidences BillboardInstallationEvidence[]
 
   @@index([role])
   @@index([companyId])
@@ -219,6 +248,7 @@ model Company {
   offers                Offer[]
   bookingRequestItems   BookingRequestItem[]
   notifications         Notification[]
+  billboardInstallationUnits BillboardInstallationUnit[]
 
   @@index([status])
 }
@@ -284,6 +314,7 @@ model Billboard {
   bookingRequests     BookingRequest[]
   offerItems          OfferItem[]
   bookingRequestItems BookingRequestItem[]
+  installationUnits   BillboardInstallationUnit[]
 
   @@index([companyId])
   @@index([status])
@@ -643,6 +674,7 @@ model BookingRequestItem {
   billboard      Billboard?            @relation(fields: [billboardId], references: [id], onDelete: Restrict)
   roadPackage    RoadBillboardPackage? @relation(fields: [roadPackageId], references: [id], onDelete: Restrict)
   offer          Offer?                @relation(fields: [offerId], references: [id], onDelete: Restrict)
+  installationUnits BillboardInstallationUnit[]
 
   @@index([bookingRequestId])
   @@index([companyId])
@@ -651,4 +683,72 @@ model BookingRequestItem {
   @@index([offerId])
   @@index([status])
   @@index([startDate, endDate])
+}
+
+model BillboardInstallationUnit {
+  id                   String                 @id @default(uuid()) @db.Uuid
+  bookingRequestItemId String                 @db.Uuid
+  companyId            String                 @db.Uuid
+  billboardId          String                 @db.Uuid
+  status               InstallationUnitStatus @default(PENDING_CREATIVE)
+  creativeImageUrl     String?
+  creativeFileUrl      String?
+  customerNotes        String?
+  companyNotes         String?
+  approvedAt           DateTime?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  deletedAt            DateTime?
+
+  bookingRequestItem BookingRequestItem               @relation(fields: [bookingRequestItemId], references: [id], onDelete: Cascade)
+  company            Company                          @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  billboard          Billboard                        @relation(fields: [billboardId], references: [id], onDelete: Restrict)
+  assignments        BillboardInstallationAssignment[]
+
+  @@unique([bookingRequestItemId, billboardId])
+  @@index([bookingRequestItemId])
+  @@index([companyId])
+  @@index([billboardId])
+  @@index([status])
+}
+
+model BillboardInstallationAssignment {
+  id                  String                       @id @default(uuid()) @db.Uuid
+  installationUnitId  String                       @db.Uuid
+  installerId         String                       @db.Uuid
+  assignedByUserId    String                       @db.Uuid
+  status              InstallationAssignmentStatus @default(ASSIGNED)
+  notes               String?
+  startedAt           DateTime?
+  submittedAt         DateTime?
+  approvedAt          DateTime?
+  revisionRequestedAt DateTime?
+  createdAt           DateTime                     @default(now())
+  updatedAt           DateTime                     @updatedAt
+
+  installationUnit BillboardInstallationUnit       @relation(fields: [installationUnitId], references: [id], onDelete: Cascade)
+  installer        User                            @relation("InstallerAssignments", fields: [installerId], references: [id], onDelete: Restrict)
+  assignedBy       User                            @relation("AssignedInstallationAssignments", fields: [assignedByUserId], references: [id], onDelete: Restrict)
+  evidences        BillboardInstallationEvidence[]
+
+  @@unique([installationUnitId, installerId])
+  @@index([installationUnitId])
+  @@index([installerId])
+  @@index([status])
+}
+
+model BillboardInstallationEvidence {
+  id               String                   @id @default(uuid()) @db.Uuid
+  assignmentId     String                   @db.Uuid
+  uploadedByUserId String                   @db.Uuid
+  url              String
+  type             InstallationEvidenceType @default(IMAGE)
+  notes            String?
+  createdAt        DateTime                 @default(now())
+
+  assignment BillboardInstallationAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  uploadedBy User                            @relation(fields: [uploadedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([assignmentId])
+  @@index([uploadedByUserId])
 }

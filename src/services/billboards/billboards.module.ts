@@ -8,9 +8,13 @@ import { AdminRoadBillboardPackagesController } from './admin-road-billboard-pac
 import { BillboardsRepository } from './billboards.repository';
 import { BillboardsService } from './billboards.service';
 import { CustomerBookingRequestsController } from './customer-booking-requests.controller';
+import { CustomerInstallationUnitsController } from './customer-installation-units.controller';
+import { InstallerAssignmentsController } from './installer-assignments.controller';
 import { PartnerBookingItemsController } from './partner-booking-items.controller';
 import { PartnerBookingRequestsController } from './partner-booking-requests.controller';
 import { PartnerBillboardsController } from './partner-billboards.controller';
+import { PartnerInstallationUnitsController } from './partner-installation-units.controller';
+import { PartnerInstallersController } from './partner-installers.controller';
 import { PartnerOffersController } from './partner-offers.controller';
 import { PartnerRoadBillboardPackagesController } from './partner-road-billboard-packages.controller';
 import { PublicBillboardsController } from './public-billboards.controller';
@@ -23,9 +27,13 @@ import { PublicOffersController } from './public-offers.controller';
     AdminBillboardsController,
     PublicBillboardsController,
     CustomerBookingRequestsController,
+    CustomerInstallationUnitsController,
     AdminBookingRequestsController,
     PartnerBookingRequestsController,
     PartnerBookingItemsController,
+    PartnerInstallersController,
+    PartnerInstallationUnitsController,
+    InstallerAssignmentsController,
     PartnerRoadBillboardPackagesController,
     AdminRoadBillboardPackagesController,
     PartnerOffersController,

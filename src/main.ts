@@ -29,6 +29,12 @@ async function bootstrap() {
   const uploadRootPath = resolve(process.cwd(), uploadRoot);
 
   mkdirSync(join(uploadRootPath, 'billboards'), { recursive: true });
+  mkdirSync(join(uploadRootPath, 'billboards', 'creatives'), {
+    recursive: true,
+  });
+  mkdirSync(join(uploadRootPath, 'billboards', 'installations'), {
+    recursive: true,
+  });
   mkdirSync(join(uploadRootPath, 'exhibitions', 'maps'), { recursive: true });
 
   await app.register(fastifyMultipart, {

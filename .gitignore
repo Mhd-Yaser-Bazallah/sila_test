@@ -61,7 +61,14 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 /uploads/*
 !/uploads/.gitkeep
 !/uploads/billboards/
+/uploads/billboards/*
 !/uploads/billboards/.gitkeep
+!/uploads/billboards/creatives/
+/uploads/billboards/creatives/*
+!/uploads/billboards/creatives/.gitkeep
+!/uploads/billboards/installations/
+/uploads/billboards/installations/*
+!/uploads/billboards/installations/.gitkeep
 !/uploads/exhibitions/
 /uploads/exhibitions/*
 !/uploads/exhibitions/maps/
