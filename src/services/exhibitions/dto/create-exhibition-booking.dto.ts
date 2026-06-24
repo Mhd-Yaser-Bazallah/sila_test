@@ -16,6 +16,10 @@ export class CreateExhibitionBookingDto {
   @IsString()
   customerNotes?: string;
 
+  @IsOptional()
+  @IsString()
+  commercialRegistryUrl?: string;
+
   @IsEnum(CustomerCompanyScope)
   customerCompanyScope: CustomerCompanyScope;
 

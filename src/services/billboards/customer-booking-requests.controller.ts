@@ -6,7 +6,9 @@ import {
   Patch,
   Post,
   Query,
+  Req,
 } from '@nestjs/common';
+import type { FastifyRequest } from 'fastify';
 import { Auth } from '../../shared/auth/decorators/auth.decorator';
 import { CurrentUser } from '../../shared/auth/decorators/current-user.decorator';
 import { Role } from '../../shared/auth/enums/role.enum';
@@ -29,6 +31,17 @@ export class CustomerBookingRequestsController {
     return this.billboardsService.createCustomerMultiBookingRequest(
       user,
       createBookingDto,
+    );
+  }
+
+  @Post('customer/bookings/multipart')
+  createMultipart(
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() request: FastifyRequest,
+  ) {
+    return this.billboardsService.createCustomerMultipartBookingRequest(
+      user,
+      request,
     );
   }
 
@@ -67,6 +80,14 @@ export class CustomerBookingRequestsController {
     @Param('id') id: string,
   ) {
     return this.billboardsService.findCustomerBookingRequest(user, id);
+  }
+
+  @Get('customer/bookings/:bookingId/state')
+  findState(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('bookingId') bookingId: string,
+  ) {
+    return this.billboardsService.findCustomerBookingState(user, bookingId);
   }
 
   @Get('customer/booking-requests/:id')

@@ -32,11 +32,13 @@ import { NotificationsService } from '../../shared/notifications/notifications.s
 import { CreateBulkExhibitionBoothsDto } from './dto/create-bulk-exhibition-booths.dto';
 import { CreateExhibitionBookingDto } from './dto/create-exhibition-booking.dto';
 import { CreateExhibitionBoothDto } from './dto/create-exhibition-booth.dto';
+import { CreateExhibitionSectorDto } from './dto/create-exhibition-sector.dto';
 import { CreateExhibitionDto } from './dto/create-exhibition.dto';
 import { DeleteBulkExhibitionBoothsDto } from './dto/delete-bulk-exhibition-booths.dto';
 import { QueryExhibitionBookingItemsDto } from './dto/query-exhibition-booking-items.dto';
 import { QueryExhibitionBookingsDto } from './dto/query-exhibition-bookings.dto';
 import { QueryExhibitionBoothsDto } from './dto/query-exhibition-booths.dto';
+import { QueryExhibitionSectorsDto } from './dto/query-exhibition-sectors.dto';
 import { QueryExhibitionsDto } from './dto/query-exhibitions.dto';
 import { RejectExhibitionBookingItemDto } from './dto/reject-exhibition-booking-item.dto';
 import { RejectExhibitionDto } from './dto/reject-exhibition.dto';
@@ -46,6 +48,7 @@ import {
 } from './dto/update-bulk-exhibition-booths.dto';
 import { UpdateExhibitionBoothDto } from './dto/update-exhibition-booth.dto';
 import { UpdateExhibitionMapFilesDto } from './dto/update-exhibition-map-files.dto';
+import { UpdateExhibitionSectorDto } from './dto/update-exhibition-sector.dto';
 import { UpdateExhibitionDto } from './dto/update-exhibition.dto';
 import {
   ExhibitionContentInput,
@@ -59,6 +62,11 @@ const ALLOWED_MAP_IMAGE_MIME_TYPES = new Map([
   ['image/webp', '.webp'],
 ]);
 const MAP_PDF_MIME_TYPE = 'application/pdf';
+const BUSINESS_PROOF_UPLOAD_DIR = join('business-proofs');
+const ALLOWED_BUSINESS_PROOF_MIME_TYPES = new Map([
+  ...ALLOWED_MAP_IMAGE_MIME_TYPES,
+  [MAP_PDF_MIME_TYPE, '.pdf'],
+]);
 
 const PARTNER_EDITABLE_EXHIBITION_STATUSES = new Set<ExhibitionStatus>([
   ExhibitionStatus.DRAFT,
@@ -249,6 +257,83 @@ export class ExhibitionsService {
     }
   }
 
+  async createPartnerSector(
+    user: AuthenticatedUser,
+    exhibitionId: string,
+    createSectorDto: CreateExhibitionSectorDto,
+  ) {
+    const exhibition = await this.findPartnerExhibition(user, exhibitionId);
+    this.ensurePartnerCanManageSectors(exhibition.status);
+
+    return this.exhibitionsRepository.createSector(
+      this.toSectorCreateData(exhibitionId, createSectorDto),
+    );
+  }
+
+  async findPartnerSectors(
+    user: AuthenticatedUser,
+    exhibitionId: string,
+    query: QueryExhibitionSectorsDto,
+  ) {
+    await this.findPartnerExhibition(user, exhibitionId);
+
+    return this.paginateSectors(exhibitionId, query);
+  }
+
+  async findPartnerSector(
+    user: AuthenticatedUser,
+    exhibitionId: string,
+    sectorId: string,
+  ) {
+    await this.findPartnerExhibition(user, exhibitionId);
+
+    return this.findSectorOrThrow(exhibitionId, sectorId);
+  }
+
+  async updatePartnerSector(
+    user: AuthenticatedUser,
+    exhibitionId: string,
+    sectorId: string,
+    updateSectorDto: UpdateExhibitionSectorDto,
+  ) {
+    const exhibition = await this.findPartnerExhibition(user, exhibitionId);
+    this.ensurePartnerCanManageSectors(exhibition.status);
+    const sector = await this.findSectorOrThrow(exhibitionId, sectorId);
+
+    return this.exhibitionsRepository.updateSector(
+      sector.id,
+      this.toSectorUpdateData(updateSectorDto),
+    );
+  }
+
+  async deletePartnerSector(
+    user: AuthenticatedUser,
+    exhibitionId: string,
+    sectorId: string,
+  ) {
+    const exhibition = await this.findPartnerExhibition(user, exhibitionId);
+    this.ensurePartnerCanManageSectors(exhibition.status);
+    const sector = await this.findSectorOrThrow(exhibitionId, sectorId);
+    const bookedBooth = await this.exhibitionsRepository.findBookedBoothInSector(
+      sector.id,
+    );
+
+    if (bookedBooth) {
+      throw new BadRequestException('Sectors with booked booths cannot be deleted');
+    }
+
+    const deleted = await this.exhibitionsRepository.softDeleteSectorWithBooths(
+      sector.id,
+      new Date(),
+    );
+
+    if (!deleted) {
+      throw new BadRequestException('Sectors with booked booths cannot be deleted');
+    }
+
+    return deleted;
+  }
+
   async createPartnerBooth(
     user: AuthenticatedUser,
     exhibitionId: string,
@@ -260,7 +345,7 @@ export class ExhibitionsService {
     await this.validateBoothSector(exhibitionId, createBoothDto.sectorId);
 
     try {
-      return await this.exhibitionsRepository.createBooth({
+      const booth = await this.exhibitionsRepository.createBooth({
         exhibitionId,
         sectorId: createBoothDto.sectorId,
         code: createBoothDto.code,
@@ -274,10 +359,11 @@ export class ExhibitionsService {
         status: createBoothDto.status ?? ExhibitionBoothStatus.AVAILABLE,
         shape: createBoothDto.shape,
         coordinates: createBoothDto.coordinates as unknown as Prisma.InputJsonValue,
-        color: createBoothDto.color,
         area: createBoothDto.area,
         sortOrder: createBoothDto.sortOrder ?? 0,
       });
+
+      return this.withBoothEffectiveColor(booth);
     } catch (error) {
       if (this.isUniqueConstraintError(error)) {
         throw new ConflictException('Booth code already exists');
@@ -355,6 +441,7 @@ export class ExhibitionsService {
           customerEmail: user.email,
           customerCompany: createBookingDto.customerCompany,
           customerNotes: createBookingDto.customerNotes,
+          commercialRegistryUrl: createBookingDto.commercialRegistryUrl,
           customerCompanyScope: createBookingDto.customerCompanyScope,
           customerSector: createBookingDto.customerSector,
           subtotalBeforeTax,
@@ -424,6 +511,24 @@ export class ExhibitionsService {
     await this.syncExhibitionBookingStatus(id);
 
     return this.findCustomerBooking(user, id);
+  }
+
+  async uploadCustomerExhibitionCommercialRegistry(
+    user: AuthenticatedUser,
+    bookingId: string,
+    request: FastifyRequest,
+  ) {
+    const booking = await this.findCustomerBooking(user, bookingId);
+    const upload = await this.parseSingleBusinessProofUpload(request);
+
+    try {
+      return await this.exhibitionsRepository.updateBookingRequest(booking.id, {
+        commercialRegistryUrl: upload.url,
+      });
+    } catch (error) {
+      await this.deleteStoredFile(upload.filePath);
+      throw error;
+    }
   }
 
   async findPartnerBookingItems(
@@ -568,7 +673,9 @@ export class ExhibitionsService {
   ) {
     await this.findPartnerExhibition(user, exhibitionId);
 
-    return this.findBoothOrThrow(exhibitionId, boothId);
+    const booth = await this.findBoothOrThrow(exhibitionId, boothId);
+
+    return this.withBoothEffectiveColor(booth);
   }
 
   async updatePartnerBooth(
@@ -593,10 +700,12 @@ export class ExhibitionsService {
     await this.validateBoothSector(exhibitionId, updateBoothDto.sectorId);
 
     try {
-      return await this.exhibitionsRepository.updateBooth(
+      const updated = await this.exhibitionsRepository.updateBooth(
         boothId,
         this.toBoothUpdateData(updateBoothDto),
       );
+
+      return this.withBoothEffectiveColor(updated);
     } catch (error) {
       if (this.isUniqueConstraintError(error)) {
         throw new ConflictException('Booth code already exists');
@@ -659,9 +768,11 @@ export class ExhibitionsService {
     }
 
     try {
-      return await this.exhibitionsRepository.createBoothsBulk(
+      const created = await this.exhibitionsRepository.createBoothsBulk(
         booths.map((booth) => this.toBoothCreateData(exhibitionId, booth)),
       );
+
+      return created.map((booth) => this.withBoothEffectiveColor(booth));
     } catch (error) {
       if (this.isUniqueConstraintError(error)) {
         throw new ConflictException('Booth code already exists');
@@ -728,12 +839,14 @@ export class ExhibitionsService {
     );
 
     try {
-      return await this.exhibitionsRepository.updateBoothsBulk(
+      const updated = await this.exhibitionsRepository.updateBoothsBulk(
         updates.map((update) => ({
           id: update.id,
           data: this.toBoothUpdateData(update),
         })),
       );
+
+      return updated.map((booth) => this.withBoothEffectiveColor(booth));
     } catch (error) {
       if (this.isUniqueConstraintError(error)) {
         throw new ConflictException('Booth code already exists');
@@ -872,7 +985,7 @@ export class ExhibitionsService {
       throw new NotFoundException('Exhibition not found');
     }
 
-    return exhibition;
+    return this.withExhibitionBoothEffectiveColors(exhibition);
   }
 
   async approveExhibition(id: string) {
@@ -945,7 +1058,7 @@ export class ExhibitionsService {
     await this.validateBoothSector(exhibitionId, createBoothDto.sectorId);
 
     try {
-      return await this.exhibitionsRepository.createBooth({
+      const booth = await this.exhibitionsRepository.createBooth({
         exhibitionId,
         sectorId: createBoothDto.sectorId,
         code: createBoothDto.code,
@@ -959,10 +1072,11 @@ export class ExhibitionsService {
         status: createBoothDto.status ?? ExhibitionBoothStatus.AVAILABLE,
         shape: createBoothDto.shape,
         coordinates: createBoothDto.coordinates as unknown as Prisma.InputJsonValue,
-        color: createBoothDto.color,
         area: createBoothDto.area,
         sortOrder: createBoothDto.sortOrder ?? 0,
       });
+
+      return this.withBoothEffectiveColor(booth);
     } catch (error) {
       if (this.isUniqueConstraintError(error)) {
         throw new ConflictException('Booth code already exists');
@@ -984,7 +1098,9 @@ export class ExhibitionsService {
   async findAdminBooth(exhibitionId: string, boothId: string) {
     await this.findAdminExhibition(exhibitionId);
 
-    return this.findBoothOrThrow(exhibitionId, boothId);
+    const booth = await this.findBoothOrThrow(exhibitionId, boothId);
+
+    return this.withBoothEffectiveColor(booth);
   }
 
   async updateAdminBooth(
@@ -1002,10 +1118,12 @@ export class ExhibitionsService {
     await this.validateBoothSector(exhibitionId, updateBoothDto.sectorId);
 
     try {
-      return await this.exhibitionsRepository.updateBooth(
+      const updated = await this.exhibitionsRepository.updateBooth(
         boothId,
         this.toBoothUpdateData(updateBoothDto),
       );
+
+      return this.withBoothEffectiveColor(updated);
     } catch (error) {
       if (this.isUniqueConstraintError(error)) {
         throw new ConflictException('Booth code already exists');
@@ -1050,7 +1168,7 @@ export class ExhibitionsService {
       throw new NotFoundException('Exhibition not found');
     }
 
-    return exhibition;
+    return this.withExhibitionBoothEffectiveColors(exhibition);
   }
 
   async findPublicExhibitionMapImageUrl(slug: string): Promise<string> {
@@ -1082,6 +1200,38 @@ export class ExhibitionsService {
     }
 
     return url;
+  }
+
+  private withBoothEffectiveColor<T extends Record<string, any>>(booth: T) {
+    const liveSector =
+      booth.sector && !booth.sector.deletedAt
+        ? {
+            id: booth.sector.id,
+            title: booth.sector.title,
+            color: booth.sector.color ?? null,
+          }
+        : null;
+
+    return {
+      ...booth,
+      sector: liveSector,
+      effectiveColor: liveSector?.color ?? null,
+    };
+  }
+
+  private withExhibitionBoothEffectiveColors<T extends Record<string, any>>(
+    exhibition: T,
+  ) {
+    if (!Array.isArray(exhibition.booths)) {
+      return exhibition;
+    }
+
+    return {
+      ...exhibition,
+      booths: exhibition.booths.map((booth: Record<string, any>) =>
+        this.withBoothEffectiveColor(booth),
+      ),
+    };
   }
 
   private async getPartnerCompanyIdWithSubscription(
@@ -1183,6 +1333,66 @@ export class ExhibitionsService {
     };
   }
 
+  private buildSectorWhere(
+    exhibitionId: string,
+    query: QueryExhibitionSectorsDto,
+  ): Prisma.ExhibitionSectorWhereInput {
+    return {
+      exhibitionId,
+      deletedAt: null,
+      ...(query.search
+        ? {
+            OR: [
+              { title: { contains: query.search, mode: 'insensitive' } },
+              { text: { contains: query.search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+  }
+
+  private async paginateSectors(
+    exhibitionId: string,
+    query: QueryExhibitionSectorsDto,
+  ) {
+    const where = this.buildSectorWhere(exhibitionId, query);
+    const skip = (query.page - 1) * query.limit;
+    const [data, total] = await Promise.all([
+      this.exhibitionsRepository.findSectors({
+        where,
+        select: {
+          id: true,
+          exhibitionId: true,
+          title: true,
+          text: true,
+          imageUrl: true,
+          bullets: true,
+          color: true,
+          sortOrder: true,
+          createdAt: true,
+          deletedAt: true,
+        },
+        skip,
+        take: query.limit,
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+      }),
+      this.exhibitionsRepository.countSectors(where),
+    ]);
+    const totalPages = Math.ceil(total / query.limit);
+
+    return {
+      data,
+      meta: {
+        page: query.page,
+        limit: query.limit,
+        total,
+        totalPages,
+        hasNextPage: query.page < totalPages,
+        hasPreviousPage: query.page > 1,
+      },
+    };
+  }
+
   private async paginateBooths(
     exhibitionId: string,
     query: QueryExhibitionBoothsDto,
@@ -1197,6 +1407,8 @@ export class ExhibitionsService {
             select: {
               id: true,
               title: true,
+              color: true,
+              deletedAt: true,
             },
           },
         },
@@ -1209,7 +1421,7 @@ export class ExhibitionsService {
     const totalPages = Math.ceil(total / query.limit);
 
     return {
-      data,
+      data: data.map((booth) => this.withBoothEffectiveColor(booth)),
       meta: {
         page: query.page,
         limit: query.limit,
@@ -1420,6 +1632,19 @@ export class ExhibitionsService {
     return booth;
   }
 
+  private async findSectorOrThrow(exhibitionId: string, sectorId: string) {
+    const sector = await this.exhibitionsRepository.findSectorById(
+      sectorId,
+      exhibitionId,
+    );
+
+    if (!sector) {
+      throw new NotFoundException('Exhibition sector not found');
+    }
+
+    return sector;
+  }
+
   private ensureBulkLimit(count: number): void {
     if (count < 1 || count > 200) {
       throw new BadRequestException('Bulk booth requests support 1 to 200 items');
@@ -1524,6 +1749,17 @@ export class ExhibitionsService {
     }
   }
 
+  private ensurePartnerCanManageSectors(status: ExhibitionStatus): void {
+    if (
+      status === ExhibitionStatus.APPROVED ||
+      status === ExhibitionStatus.ARCHIVED
+    ) {
+      throw new BadRequestException(
+        'Sectors cannot be managed after approval or archival',
+      );
+    }
+  }
+
   private ensureBookedBoothPartnerUpdateIsSafe(
     updateBoothDto: UpdateExhibitionBoothDto,
   ): void {
@@ -1619,7 +1855,6 @@ export class ExhibitionsService {
       coordinates: updateBoothDto.coordinates
         ? (updateBoothDto.coordinates as unknown as Prisma.InputJsonValue)
         : undefined,
-      color: updateBoothDto.color,
       area: updateBoothDto.area,
       sortOrder: updateBoothDto.sortOrder,
     };
@@ -1644,9 +1879,36 @@ export class ExhibitionsService {
       shape: createBoothDto.shape,
       coordinates:
         createBoothDto.coordinates as unknown as Prisma.InputJsonValue,
-      color: createBoothDto.color,
       area: createBoothDto.area,
       sortOrder: createBoothDto.sortOrder ?? 0,
+    };
+  }
+
+  private toSectorCreateData(
+    exhibitionId: string,
+    createSectorDto: CreateExhibitionSectorDto,
+  ): Prisma.ExhibitionSectorUncheckedCreateInput {
+    return {
+      exhibitionId,
+      title: createSectorDto.title,
+      text: createSectorDto.text,
+      imageUrl: createSectorDto.imageUrl,
+      color: createSectorDto.color,
+      bullets: createSectorDto.bullets as Prisma.InputJsonValue,
+      sortOrder: createSectorDto.sortOrder ?? 0,
+    };
+  }
+
+  private toSectorUpdateData(
+    updateSectorDto: UpdateExhibitionSectorDto,
+  ): Prisma.ExhibitionSectorUncheckedUpdateInput {
+    return {
+      title: updateSectorDto.title,
+      text: updateSectorDto.text,
+      imageUrl: updateSectorDto.imageUrl,
+      color: updateSectorDto.color,
+      bullets: updateSectorDto.bullets as Prisma.InputJsonValue,
+      sortOrder: updateSectorDto.sortOrder,
     };
   }
 
@@ -1688,6 +1950,7 @@ export class ExhibitionsService {
           title: item.title,
           text: item.text,
           imageUrl: item.imageUrl,
+          color: item.color,
           bullets: item.bullets as Prisma.InputJsonValue,
           sortOrder: item.sortOrder ?? 0,
         })),
@@ -1817,6 +2080,57 @@ export class ExhibitionsService {
     return data;
   }
 
+  private async parseSingleBusinessProofUpload(
+    request: FastifyRequest,
+  ): Promise<StoredMapFile> {
+    const multipartRequest = request as MultipartFastifyRequest;
+
+    if (!multipartRequest.isMultipart()) {
+      throw new BadRequestException('Request must be multipart/form-data');
+    }
+
+    const maxUploadSizeMb =
+      this.configService.getOrThrow<number>('maxUploadSizeMb');
+    let upload: StoredMapFile | undefined;
+
+    try {
+      for await (const part of multipartRequest.parts({
+        limits: {
+          fileSize: maxUploadSizeMb * 1024 * 1024,
+          files: 1,
+          fields: 0,
+          parts: 1,
+        },
+      })) {
+        if (part.type !== 'file' || part.fieldname !== 'commercialRegistry') {
+          throw new BadRequestException(
+            'File field must be named commercialRegistry',
+          );
+        }
+
+        upload = await this.storeBusinessProofFile(part, 'commercial-registry');
+      }
+    } catch (error) {
+      if (upload) {
+        await this.deleteStoredFile(upload.filePath);
+      }
+
+      if (this.isMultipartFileTooLargeError(error)) {
+        throw new BadRequestException(
+          `File size must not exceed ${maxUploadSizeMb}MB`,
+        );
+      }
+
+      throw error;
+    }
+
+    if (!upload) {
+      throw new BadRequestException('commercialRegistry file is required');
+    }
+
+    return upload;
+  }
+
   private storeMapImage(file: MultipartFile, exhibitionId: string) {
     const extension = ALLOWED_MAP_IMAGE_MIME_TYPES.get(file.mimetype);
 
@@ -1835,6 +2149,23 @@ export class ExhibitionsService {
     }
 
     return this.storeMultipartMapFile(file, exhibitionId, '.pdf');
+  }
+
+  private storeBusinessProofFile(file: MultipartFile, entityId: string) {
+    const extension = ALLOWED_BUSINESS_PROOF_MIME_TYPES.get(file.mimetype);
+
+    if (!extension) {
+      throw new BadRequestException(
+        'commercialRegistry must be a JPEG, PNG, WebP, or PDF file',
+      );
+    }
+
+    return this.storeMultipartFile(
+      file,
+      BUSINESS_PROOF_UPLOAD_DIR,
+      entityId,
+      extension,
+    );
   }
 
   private async storeMultipartMapFile(
@@ -1870,6 +2201,37 @@ export class ExhibitionsService {
     return {
       filePath,
       url: `${publicBaseUrl.replace(/\/$/, '')}/${publicPath}`,
+    };
+  }
+
+  private async storeMultipartFile(
+    file: MultipartFile,
+    folder: string,
+    entityId: string,
+    extension: string,
+  ): Promise<StoredMapFile> {
+    const uploadRoot = this.configService.getOrThrow<string>('uploadRoot');
+    const publicBaseUrl =
+      this.configService.getOrThrow<string>('publicBaseUrl');
+    const uploadDir = resolve(process.cwd(), uploadRoot, folder);
+    const filename = `${entityId}-${Date.now()}-${randomUUID()}${extension}`;
+    const filePath = join(uploadDir, filename);
+
+    await mkdir(uploadDir, { recursive: true });
+    await pipeline(file.file, createWriteStream(filePath));
+
+    if (file.file.truncated) {
+      await this.deleteStoredFile(filePath);
+      throw new BadRequestException(
+        `File size must not exceed ${this.configService.getOrThrow<number>(
+          'maxUploadSizeMb',
+        )}MB`,
+      );
+    }
+
+    return {
+      filePath,
+      url: `${publicBaseUrl.replace(/\/$/, '')}/${uploadRoot}/${folder.replace(/\\/g, '/')}/${filename}`,
     };
   }
 

@@ -40,6 +40,10 @@ class ExhibitionSectorInput {
   imageUrl?: string;
 
   @IsOptional()
+  @IsString()
+  color?: string;
+
+  @IsOptional()
   @IsArray()
   bullets?: string[];
 

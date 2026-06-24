@@ -170,7 +170,7 @@ Platform admin. Can manage companies, users, billboards, road packages, offer mo
 
 `COMPANY_ADMIN`
 
-Partner/company user. Can manage only their own company billboards, road packages, offers, exhibitions, billboard media, exhibition maps, unavailable periods, booths, and approve or reject booking items assigned to their company. Company admins fully own exhibition content, map files, and booth management.
+Partner/company user. Can manage only their own company billboards, road packages, offers, exhibitions, billboard media, exhibition maps, unavailable periods, sectors, booths, and approve or reject booking items assigned to their company. Company admins fully own exhibition content, map files, sector management, and booth management.
 
 `CUSTOMER`
 
@@ -372,7 +372,19 @@ Use `/map/image` when the frontend needs an image for interactive booth overlays
 
 Interactive map booth coordinates are stored as percentage-based JSON points. The frontend can draw `RECTANGLE` or `POLYGON` booth shapes over the map using those coordinates.
 
-Booths may optionally belong to an exhibition sector. Sectors are organizational metadata for grouping and filtering booths; customer bookings are still made on individual booths.
+Booths may optionally belong to an exhibition sector. Sectors are organizational metadata for grouping and filtering booths; customer bookings are still made on individual booths. Sector records own the map color. Booths inherit color from their active sector and return it as `effectiveColor`; booth color is not managed independently anymore.
+
+Company admins manage exhibition sectors through standalone CRUD APIs for interactive map sector editing:
+
+```text
+POST /api/v1/partner/exhibitions/:id/sectors
+GET /api/v1/partner/exhibitions/:id/sectors
+GET /api/v1/partner/exhibitions/:id/sectors/:sectorId
+PATCH /api/v1/partner/exhibitions/:id/sectors/:sectorId
+DELETE /api/v1/partner/exhibitions/:id/sectors/:sectorId
+```
+
+Sector create/update accepts `title`, `text`, `imageUrl`, `bullets`, `sortOrder`, and `color`. Sector writes are blocked once an exhibition is approved or archived. Deleting a sector soft-deletes the sector and all non-deleted booths linked to it in one transaction; if any linked booth is `BOOKED`, the delete is rejected.
 
 Company admins manage exhibition booths through single-booth APIs and bulk APIs for large exhibition maps:
 
@@ -390,7 +402,7 @@ Super admins can review exhibitions, approve or reject submissions, archive exhi
 
 Exhibition booth booking is request-based. Customers can request one or many available booths from an approved public exhibition. Partner companies approve or reject individual booth booking items; approval marks the booth as `BOOKED`, while rejection keeps it `AVAILABLE`. Admin exhibition booking endpoints are monitoring-only.
 
-`BOOKED` booths cannot be deleted. Company admins may update only descriptive booth fields on booked booths: title, description, color, area, and sort order. Geometry, coordinates, price, setup price, currency, sector, code, and status cannot be changed once a booth is booked.
+`BOOKED` booths cannot be deleted. Company admins may update only descriptive booth fields on booked booths: title, description, area, and sort order. Geometry, coordinates, price, setup price, currency, sector, code, and status cannot be changed once a booth is booked. Booth color follows the booth's sector color, so update sector `color` through the sector CRUD APIs.
 
 ## Booking Notes
 
@@ -398,7 +410,41 @@ Exhibition booth booking is request-based. Customers can request one or many ava
 - Booking is request-based, not direct payment booking.
 - Customer bookings can contain individual billboards, road packages, and offers.
 - `customerCompanyScope` is required for customer billboard and exhibition bookings. `LOCAL` uses `localPrice`; `INTERNATIONAL` uses `internationalPrice`.
+- Billboard booking supports a multipart creation flow:
+
+```text
+POST /api/v1/customer/bookings/multipart
+```
+
+The request must use `multipart/form-data` with a `metadata` JSON field matching the existing `POST /customer/bookings` body. Customers must upload ad creative during booking creation so partner companies can review ad content before approving booking items. Creative upload after installation unit creation remains available only as a replacement/update path.
+
+Creative files are named by actual billboard ID:
+
+```text
+creativeImage_<billboardId>
+creativeFile_<billboardId>
+commercialRegistry
+```
+
+`creativeImage` accepts JPEG, PNG, and WebP. `creativeFile` accepts JPEG, PNG, WebP, or PDF. At least one of `creativeImage_<billboardId>` or `creativeFile_<billboardId>` is required for every actual billboard in the booking. A `BILLBOARD` item has one actual billboard; a `ROAD_PACKAGE` item expands to every billboard in the package; an `OFFER` item expands to every billboard in the offer. If any underlying package/offer billboard is missing creative, the whole booking is rejected.
+
+`commercialRegistry` is required for `LOCAL` and `INTERNATIONAL` company scopes and is stored under `uploads/business-proofs`. Partner booking item list/detail responses include the relevant creative files for company review. When a partner approves a booking item, installation units are created with the matching creative already copied in and are marked `READY_FOR_ASSIGNMENT`; older bookings without creatives still fall back to `PENDING_CREATIVE`.
+
+Customers can track booking and installation progress with:
+
+```text
+GET /api/v1/customer/bookings/:bookingId/state
+```
+
+The state response includes booking status, commercial registry URL, creative status per actual billboard, installation units, current step, and a simple step timeline. Installation proof images are returned to the customer only after the installation unit is company-approved.
 - Customer exhibition bookings can contain one or many exhibition booths.
+- Exhibition bookings support `commercialRegistryUrl` during JSON creation and a later upload endpoint:
+
+```text
+POST /api/v1/customer/exhibition-bookings/:bookingId/commercial-registry/upload
+```
+
+The upload uses multipart field `commercialRegistry` and accepts JPEG, PNG, WebP, or PDF files stored under `uploads/business-proofs`.
 - Partner companies approve or reject only their own booking items.
 - Admin booking endpoints are monitoring-only.
 - Public billboard browsing is open.
@@ -418,6 +464,22 @@ Exhibition booth booking is request-based. Customers can request one or many ava
 - DIGITAL billboards may include `displayDurationSeconds`; that field is invalid for non-digital billboards.
 - `pricingUnit: HOUR` remains valid only for `CAR_AD`, and `printedSubtype` remains valid only for `PRINTED`.
 - Exhibition booths may include `setupPrice`. Customer exhibition booking uses the selected scoped booth price plus `setupPrice`, and booking items snapshot both the selected final price and setup price.
+
+## Company Logos
+
+Companies support an optional `logoUrl`. Super admins can set a URL directly:
+
+```text
+PATCH /api/v1/companies/:id/logo
+```
+
+or upload an image:
+
+```text
+POST /api/v1/companies/:id/logo/upload
+```
+
+The upload uses multipart field `logo`, accepts JPEG, PNG, and WebP, and stores files under `uploads/companies/logos`. Company logo URLs are included in company responses, authenticated user company objects, and public company summaries where company data is returned.
 
 ## Useful Scripts
 

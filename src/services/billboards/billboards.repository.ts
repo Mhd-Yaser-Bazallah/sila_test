@@ -135,6 +135,7 @@ export class BillboardsRepository extends BaseRepository<Billboard> {
           select: {
             id: true,
             name: true,
+            logoUrl: true,
           },
         },
         billboards: {
@@ -163,6 +164,7 @@ export class BillboardsRepository extends BaseRepository<Billboard> {
           select: {
             id: true,
             name: true,
+            logoUrl: true,
           },
         },
         items: {
@@ -480,6 +482,7 @@ export class BillboardsRepository extends BaseRepository<Billboard> {
   createBookingRequestWithItems(
     data: Prisma.BookingRequestUncheckedCreateInput,
     items: Prisma.BookingRequestItemUncheckedCreateWithoutBookingRequestInput[],
+    creatives: Prisma.BookingItemCreativeUncheckedCreateWithoutBookingRequestInput[] = [],
   ) {
     return this.prisma.bookingRequest.create({
       data: {
@@ -487,6 +490,7 @@ export class BillboardsRepository extends BaseRepository<Billboard> {
         items: {
           create: items,
         },
+        creatives: creatives.length ? { create: creatives } : undefined,
       },
       include: this.bookingRequestDetailInclude(),
     });
@@ -643,6 +647,7 @@ export class BillboardsRepository extends BaseRepository<Billboard> {
         select: {
           id: true,
           name: true,
+          logoUrl: true,
           status: true,
         },
       },
@@ -699,6 +704,7 @@ export class BillboardsRepository extends BaseRepository<Billboard> {
         select: {
           id: true,
           name: true,
+          logoUrl: true,
         },
       },
       media: {
@@ -740,6 +746,14 @@ export class BillboardsRepository extends BaseRepository<Billboard> {
         orderBy: { createdAt: 'asc' },
         include: this.bookingItemDetailInclude(),
       },
+      creatives: {
+        orderBy: { createdAt: 'asc' },
+        include: {
+          billboard: {
+            select: this.bookingBillboardSelect(),
+          },
+        },
+      },
     } satisfies Prisma.BookingRequestInclude;
   }
 
@@ -769,8 +783,17 @@ export class BillboardsRepository extends BaseRepository<Billboard> {
           customerCompanyScope: true,
           customerSector: true,
           customerNotes: true,
+          commercialRegistryUrl: true,
           status: true,
           createdAt: true,
+          creatives: {
+            orderBy: { createdAt: 'asc' },
+            include: {
+              billboard: {
+                select: this.bookingBillboardSelect(),
+              },
+            },
+          },
         },
       },
       billboard: {
@@ -799,6 +822,14 @@ export class BillboardsRepository extends BaseRepository<Billboard> {
           internationalDiscountedTotalPrice: true,
           currency: true,
           status: true,
+        },
+      },
+      creatives: {
+        orderBy: { createdAt: 'asc' },
+        include: {
+          billboard: {
+            select: this.bookingBillboardSelect(),
+          },
         },
       },
     } satisfies Prisma.BookingRequestItemInclude;
@@ -838,6 +869,14 @@ export class BillboardsRepository extends BaseRepository<Billboard> {
           internationalDiscountedTotalPrice: true,
           currency: true,
           status: true,
+        },
+      },
+      creatives: {
+        orderBy: { createdAt: 'asc' },
+        include: {
+          billboard: {
+            select: this.bookingBillboardSelect(),
+          },
         },
       },
     } satisfies Prisma.BookingRequestItemInclude;

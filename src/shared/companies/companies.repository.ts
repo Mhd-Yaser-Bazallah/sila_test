@@ -17,6 +17,7 @@ interface CreateCompanyWithAdminInput {
     name: string;
     email?: string;
     phone?: string;
+    logoUrl?: string;
     serviceTypes?: ServiceType[];
   };
   admin: {
@@ -88,6 +89,7 @@ export class CompaniesRepository extends BaseRepository<Company> {
           name: input.company.name,
           email: input.company.email,
           phone: input.company.phone,
+          logoUrl: input.company.logoUrl,
           serviceSubscriptions: input.company.serviceTypes?.length
             ? {
                 create: input.company.serviceTypes.map((serviceType) => ({
@@ -178,6 +180,7 @@ export class CompaniesRepository extends BaseRepository<Company> {
       name: true,
       email: true,
       phone: true,
+      logoUrl: true,
       status: true,
       createdAt: true,
       updatedAt: true,
@@ -202,6 +205,7 @@ export class CompaniesRepository extends BaseRepository<Company> {
         select: {
           id: true,
           name: true,
+          logoUrl: true,
           status: true,
         },
       },

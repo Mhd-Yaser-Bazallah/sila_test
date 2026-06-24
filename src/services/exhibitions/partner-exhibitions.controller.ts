@@ -16,13 +16,16 @@ import { Role } from '../../shared/auth/enums/role.enum';
 import type { AuthenticatedUser } from '../../shared/auth/interfaces/authenticated-user.interface';
 import { CreateBulkExhibitionBoothsDto } from './dto/create-bulk-exhibition-booths.dto';
 import { CreateExhibitionBoothDto } from './dto/create-exhibition-booth.dto';
+import { CreateExhibitionSectorDto } from './dto/create-exhibition-sector.dto';
 import { CreateExhibitionDto } from './dto/create-exhibition.dto';
 import { DeleteBulkExhibitionBoothsDto } from './dto/delete-bulk-exhibition-booths.dto';
 import { QueryExhibitionBoothsDto } from './dto/query-exhibition-booths.dto';
+import { QueryExhibitionSectorsDto } from './dto/query-exhibition-sectors.dto';
 import { QueryExhibitionsDto } from './dto/query-exhibitions.dto';
 import { UpdateBulkExhibitionBoothsDto } from './dto/update-bulk-exhibition-booths.dto';
 import { UpdateExhibitionBoothDto } from './dto/update-exhibition-booth.dto';
 import { UpdateExhibitionMapFilesDto } from './dto/update-exhibition-map-files.dto';
+import { UpdateExhibitionSectorDto } from './dto/update-exhibition-sector.dto';
 import { UpdateExhibitionDto } from './dto/update-exhibition.dto';
 import { ExhibitionsService } from './exhibitions.service';
 
@@ -106,6 +109,61 @@ export class PartnerExhibitionsController {
       id,
       createBoothDto,
     );
+  }
+
+  @Post(':id/sectors')
+  createSector(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() createSectorDto: CreateExhibitionSectorDto,
+  ) {
+    return this.exhibitionsService.createPartnerSector(
+      user,
+      id,
+      createSectorDto,
+    );
+  }
+
+  @Get(':id/sectors')
+  findSectors(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Query() query: QueryExhibitionSectorsDto,
+  ) {
+    return this.exhibitionsService.findPartnerSectors(user, id, query);
+  }
+
+  @Get(':id/sectors/:sectorId')
+  findSector(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('sectorId') sectorId: string,
+  ) {
+    return this.exhibitionsService.findPartnerSector(user, id, sectorId);
+  }
+
+  @Patch(':id/sectors/:sectorId')
+  updateSector(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('sectorId') sectorId: string,
+    @Body() updateSectorDto: UpdateExhibitionSectorDto,
+  ) {
+    return this.exhibitionsService.updatePartnerSector(
+      user,
+      id,
+      sectorId,
+      updateSectorDto,
+    );
+  }
+
+  @Delete(':id/sectors/:sectorId')
+  deleteSector(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('sectorId') sectorId: string,
+  ) {
+    return this.exhibitionsService.deletePartnerSector(user, id, sectorId);
   }
 
   @Get(':id/booths')

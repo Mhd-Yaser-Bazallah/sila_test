@@ -68,6 +68,7 @@ export class UsersRepository extends BaseRepository<User> {
         select: {
           id: true,
           name: true,
+          logoUrl: true,
           status: true,
         },
       },

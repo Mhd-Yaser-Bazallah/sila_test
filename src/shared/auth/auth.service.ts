@@ -137,6 +137,7 @@ export class AuthService {
           select: {
             id: true,
             name: true,
+            logoUrl: true,
             status: true,
             serviceSubscriptions: {
               select: {
@@ -177,6 +178,7 @@ export class AuthService {
           select: {
             id: true,
             name: true,
+            logoUrl: true,
             status: true,
             serviceSubscriptions: {
               select: {
@@ -248,6 +250,7 @@ export class AuthService {
     company?: {
       id: string;
       name: string;
+      logoUrl: string | null;
       status: string;
       serviceSubscriptions?: {
         serviceType: string;
@@ -267,6 +270,7 @@ export class AuthService {
         ? {
             id: user.company.id,
             name: user.company.name,
+            logoUrl: user.company.logoUrl,
             status: user.company.status,
             serviceSubscriptions: user.company.serviceSubscriptions?.map(
               (subscription) => ({

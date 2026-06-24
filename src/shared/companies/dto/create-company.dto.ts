@@ -20,6 +20,10 @@ export class CreateCompanyDto {
   phone?: string;
 
   @IsOptional()
+  @IsString()
+  logoUrl?: string;
+
+  @IsOptional()
   @IsArray()
   @IsEnum(ServiceType, { each: true })
   serviceTypes?: ServiceType[];

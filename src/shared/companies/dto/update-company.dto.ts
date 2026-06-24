@@ -15,6 +15,10 @@ export class UpdateCompanyDto {
   phone?: string;
 
   @IsOptional()
+  @IsString()
+  logoUrl?: string;
+
+  @IsOptional()
   @IsEnum(CompanyStatus)
   status?: CompanyStatus;
 }

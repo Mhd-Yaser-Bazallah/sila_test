@@ -69,6 +69,15 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 !/uploads/billboards/installations/
 /uploads/billboards/installations/*
 !/uploads/billboards/installations/.gitkeep
+!/uploads/business-proofs/
+/uploads/business-proofs/*
+!/uploads/business-proofs/.gitkeep
+!/uploads/companies/
+/uploads/companies/*
+!/uploads/companies/.gitkeep
+!/uploads/companies/logos/
+/uploads/companies/logos/*
+!/uploads/companies/logos/.gitkeep
 !/uploads/exhibitions/
 /uploads/exhibitions/*
 !/uploads/exhibitions/maps/

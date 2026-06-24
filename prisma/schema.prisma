@@ -234,6 +234,7 @@ model Company {
   name      String
   email     String?
   phone     String?
+  logoUrl   String?
   status    CompanyStatus @default(ACTIVE)
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
@@ -315,6 +316,7 @@ model Billboard {
   offerItems          OfferItem[]
   bookingRequestItems BookingRequestItem[]
   installationUnits   BillboardInstallationUnit[]
+  bookingItemCreatives BookingItemCreative[]
 
   @@index([companyId])
   @@index([status])
@@ -447,13 +449,17 @@ model ExhibitionSector {
   text         String?
   imageUrl     String?
   bullets      Json?
+  color        String?
   sortOrder    Int      @default(0)
   createdAt    DateTime @default(now())
+  deletedAt    DateTime?
 
   exhibition Exhibition @relation(fields: [exhibitionId], references: [id], onDelete: Cascade)
   booths     ExhibitionBooth[]
 
   @@index([exhibitionId])
+  @@index([deletedAt])
+  @@index([exhibitionId, deletedAt])
 }
 
 model ExhibitionParticipationFeature {
@@ -515,6 +521,7 @@ model ExhibitionBookingRequest {
   customerNotes        String?
   customerCompanyScope CustomerCompanyScope?
   customerSector       CustomerSector?
+  commercialRegistryUrl String?
   subtotalBeforeTax    Decimal?                       @db.Decimal(12, 2)
   totalTaxAmount       Decimal?                       @db.Decimal(12, 2)
   totalAfterTax        Decimal?                       @db.Decimal(12, 2)
@@ -571,6 +578,7 @@ model BookingRequest {
   customerCompanyScope CustomerCompanyScope?
   customerSector       CustomerSector?
   customerNotes        String?
+  commercialRegistryUrl String?
   estimatedPrice       Decimal?              @db.Decimal(12, 2)
   subtotalBeforeTax    Decimal?              @db.Decimal(12, 2)
   totalTaxAmount       Decimal?              @db.Decimal(12, 2)
@@ -588,11 +596,33 @@ model BookingRequest {
   billboard Billboard?           @relation(fields: [billboardId], references: [id], onDelete: Restrict)
   customer  User                 @relation(fields: [customerId], references: [id], onDelete: Restrict)
   items     BookingRequestItem[]
+  creatives BookingItemCreative[]
 
   @@index([billboardId])
   @@index([customerId])
   @@index([status])
   @@index([startDate, endDate])
+}
+
+model BookingItemCreative {
+  id                   String   @id @default(uuid()) @db.Uuid
+  bookingRequestId     String   @db.Uuid
+  bookingRequestItemId String?  @db.Uuid
+  billboardId          String   @db.Uuid
+  creativeImageUrl     String?
+  creativeFileUrl      String?
+  customerNotes        String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  bookingRequest     BookingRequest      @relation(fields: [bookingRequestId], references: [id], onDelete: Cascade)
+  bookingRequestItem BookingRequestItem? @relation(fields: [bookingRequestItemId], references: [id], onDelete: Cascade)
+  billboard          Billboard           @relation(fields: [billboardId], references: [id], onDelete: Restrict)
+
+  @@unique([bookingRequestId, billboardId])
+  @@index([bookingRequestId])
+  @@index([bookingRequestItemId])
+  @@index([billboardId])
 }
 
 model Offer {
@@ -675,6 +705,7 @@ model BookingRequestItem {
   roadPackage    RoadBillboardPackage? @relation(fields: [roadPackageId], references: [id], onDelete: Restrict)
   offer          Offer?                @relation(fields: [offerId], references: [id], onDelete: Restrict)
   installationUnits BillboardInstallationUnit[]
+  creatives      BookingItemCreative[]
 
   @@index([bookingRequestId])
   @@index([companyId])

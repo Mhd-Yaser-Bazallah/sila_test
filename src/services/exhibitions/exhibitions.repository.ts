@@ -107,7 +107,6 @@ export class ExhibitionsRepository extends BaseRepository<Exhibition> {
       }
 
       if (content?.sectors) {
-        await tx.exhibitionSector.deleteMany({ where: { exhibitionId: id } });
         if (content.sectors.length > 0) {
           await tx.exhibitionSector.createMany({
             data: content.sectors.map((item) => ({
@@ -142,6 +141,10 @@ export class ExhibitionsRepository extends BaseRepository<Exhibition> {
   softDeleteExhibition(id: string, deletedAt: Date) {
     return this.prisma.$transaction(async (tx) => {
       await tx.exhibitionBooth.updateMany({
+        where: { exhibitionId: id, deletedAt: null },
+        data: { deletedAt },
+      });
+      await tx.exhibitionSector.updateMany({
         where: { exhibitionId: id, deletedAt: null },
         data: { deletedAt },
       });
@@ -258,15 +261,76 @@ export class ExhibitionsRepository extends BaseRepository<Exhibition> {
     });
   }
 
+  createSector(data: Prisma.ExhibitionSectorUncheckedCreateInput) {
+    return this.prisma.exhibitionSector.create({
+      data,
+      select: this.sectorSelect(),
+    });
+  }
+
+  findSectors(args: Prisma.ExhibitionSectorFindManyArgs) {
+    return this.prisma.exhibitionSector.findMany(args);
+  }
+
+  countSectors(where: Prisma.ExhibitionSectorWhereInput) {
+    return this.prisma.exhibitionSector.count({ where });
+  }
+
   findSectorById(sectorId: string, exhibitionId: string) {
     return this.prisma.exhibitionSector.findFirst({
       where: {
         id: sectorId,
         exhibitionId,
+        deletedAt: null,
       },
-      select: {
-        id: true,
+      select: this.sectorSelect(),
+    });
+  }
+
+  updateSector(id: string, data: Prisma.ExhibitionSectorUncheckedUpdateInput) {
+    return this.prisma.exhibitionSector.update({
+      where: { id },
+      data,
+      select: this.sectorSelect(),
+    });
+  }
+
+  findBookedBoothInSector(sectorId: string) {
+    return this.prisma.exhibitionBooth.findFirst({
+      where: {
+        sectorId,
+        deletedAt: null,
+        status: ExhibitionBoothStatus.BOOKED,
       },
+      select: { id: true },
+    });
+  }
+
+  softDeleteSectorWithBooths(sectorId: string, deletedAt: Date) {
+    return this.prisma.$transaction(async (tx) => {
+      const bookedBooth = await tx.exhibitionBooth.findFirst({
+        where: {
+          sectorId,
+          deletedAt: null,
+          status: ExhibitionBoothStatus.BOOKED,
+        },
+        select: { id: true },
+      });
+
+      if (bookedBooth) {
+        return null;
+      }
+
+      await tx.exhibitionBooth.updateMany({
+        where: { sectorId, deletedAt: null },
+        data: { deletedAt },
+      });
+
+      return tx.exhibitionSector.update({
+        where: { id: sectorId },
+        data: { deletedAt },
+        select: this.sectorSelect(),
+      });
     });
   }
 
@@ -281,6 +345,16 @@ export class ExhibitionsRepository extends BaseRepository<Exhibition> {
       include: {
         booths: {
           where: { deletedAt: null },
+          include: {
+            sector: {
+              select: {
+                id: true,
+                title: true,
+                color: true,
+                deletedAt: true,
+              },
+            },
+          },
         },
       },
     });
@@ -375,6 +449,17 @@ export class ExhibitionsRepository extends BaseRepository<Exhibition> {
     });
   }
 
+  updateBookingRequest(
+    id: string,
+    data: Prisma.ExhibitionBookingRequestUpdateInput,
+  ) {
+    return this.prisma.exhibitionBookingRequest.update({
+      where: { id },
+      data,
+      include: this.bookingDetailInclude(),
+    });
+  }
+
   cancelPendingBookingItems(bookingRequestId: string) {
     return this.prisma.exhibitionBookingItem.updateMany({
       where: {
@@ -461,13 +546,14 @@ export class ExhibitionsRepository extends BaseRepository<Exhibition> {
         select: {
           id: true,
           name: true,
+          logoUrl: true,
           status: true,
         },
       },
       _count: {
         select: {
           aboutCards: true,
-          sectors: true,
+          sectors: { where: { deletedAt: null } },
           participationFeatures: true,
           booths: { where: { deletedAt: null } },
         },
@@ -481,6 +567,7 @@ export class ExhibitionsRepository extends BaseRepository<Exhibition> {
         select: {
           id: true,
           name: true,
+          logoUrl: true,
           status: true,
         },
       },
@@ -488,6 +575,7 @@ export class ExhibitionsRepository extends BaseRepository<Exhibition> {
         orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
       },
       sectors: {
+        where: { deletedAt: null },
         orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
       },
       participationFeatures: {
@@ -501,7 +589,7 @@ export class ExhibitionsRepository extends BaseRepository<Exhibition> {
       _count: {
         select: {
           aboutCards: true,
-          sectors: true,
+          sectors: { where: { deletedAt: null } },
           participationFeatures: true,
           booths: { where: { deletedAt: null } },
         },
@@ -534,6 +622,7 @@ export class ExhibitionsRepository extends BaseRepository<Exhibition> {
         select: {
           id: true,
           name: true,
+          logoUrl: true,
         },
       },
       _count: {
@@ -552,6 +641,7 @@ export class ExhibitionsRepository extends BaseRepository<Exhibition> {
         orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
       },
       sectors: {
+        where: { deletedAt: null },
         orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
       },
       participationFeatures: {
@@ -579,6 +669,8 @@ export class ExhibitionsRepository extends BaseRepository<Exhibition> {
             select: {
               id: true,
               title: true,
+              color: true,
+              deletedAt: true,
             },
           },
           sortOrder: true,
@@ -697,9 +789,26 @@ export class ExhibitionsRepository extends BaseRepository<Exhibition> {
         select: {
           id: true,
           title: true,
+          color: true,
+          deletedAt: true,
         },
       },
     } satisfies Prisma.ExhibitionBoothSelect;
+  }
+
+  private sectorSelect() {
+    return {
+      id: true,
+      exhibitionId: true,
+      title: true,
+      text: true,
+      imageUrl: true,
+      bullets: true,
+      color: true,
+      sortOrder: true,
+      createdAt: true,
+      deletedAt: true,
+    } satisfies Prisma.ExhibitionSectorSelect;
   }
 
   private boothInclude() {
@@ -708,6 +817,8 @@ export class ExhibitionsRepository extends BaseRepository<Exhibition> {
         select: {
           id: true,
           title: true,
+          color: true,
+          deletedAt: true,
         },
       },
     } satisfies Prisma.ExhibitionBoothInclude;

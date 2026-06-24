@@ -11,6 +11,7 @@ export interface AuthenticatedUser {
   company?: {
     id: string;
     name: string;
+    logoUrl?: string | null;
     status: string;
     serviceSubscriptions?: {
       serviceType: string;

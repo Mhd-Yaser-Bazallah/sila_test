@@ -8,6 +8,8 @@ import { ConfigService } from '@nestjs/config';
 import '@fastify/multipart';
 import type { MultipartFile } from '@fastify/multipart';
 import type { FastifyRequest } from 'fastify';
+import { plainToInstance } from 'class-transformer';
+import { validateSync } from 'class-validator';
 import {
   BillboardStatus,
   BookingItemType,
@@ -86,6 +88,25 @@ interface ParsedMediaUpload {
   filePath: string;
   isMain?: boolean;
   sortOrder?: number;
+}
+
+interface StoredUpload {
+  url: string;
+  filePath: string;
+}
+
+interface MultipartBookingUpload {
+  metadata: CreateMultiBookingRequestDto;
+  creativeImages: Map<string, StoredUpload>;
+  creativeFiles: Map<string, StoredUpload>;
+  commercialRegistry?: StoredUpload;
+}
+
+interface BookingCreativeCreateInput {
+  billboardId: string;
+  creativeImageUrl?: string;
+  creativeFileUrl?: string;
+  customerNotes?: string;
 }
 
 interface MultipartValue {
@@ -1232,6 +1253,69 @@ export class BillboardsService {
       });
     }
 
+    return this.createCustomerBookingFromResolvedItems(
+      user,
+      createBookingDto,
+      resolvedItems,
+    );
+  }
+
+  async createCustomerMultipartBookingRequest(
+    user: AuthenticatedUser,
+    request: FastifyRequest,
+  ) {
+    this.ensureCustomer(user);
+    const upload = await this.parseMultipartBookingUpload(request);
+
+    try {
+      upload.metadata.items.forEach((item) =>
+        this.ensureValidDateRange(item.startDate, item.endDate),
+      );
+
+      const resolvedItems = await this.resolveBookingItems(
+        upload.metadata.items,
+        upload.metadata.customerCompanyScope,
+      );
+      const actualBillboardIds = this.resolveActualBillboardIds(resolvedItems);
+      const conflicts = await this.findAvailabilityConflictsForResolvedItems(
+        resolvedItems,
+      );
+
+      if (conflicts.length > 0) {
+        throw new BadRequestException({
+          message: 'One or more booking items are not available',
+          conflicts,
+        });
+      }
+
+      this.ensureCommercialRegistryUploaded(upload);
+      this.ensureCreativesUploadedForBillboards(upload, actualBillboardIds);
+
+      return await this.createCustomerBookingFromResolvedItems(
+        user,
+        upload.metadata,
+        resolvedItems,
+        upload.commercialRegistry?.url,
+        actualBillboardIds.map((billboardId) => ({
+          billboardId,
+          creativeImageUrl: upload.creativeImages.get(billboardId)?.url,
+          creativeFileUrl: upload.creativeFiles.get(billboardId)?.url,
+          customerNotes: upload.metadata.customerNotes,
+        })),
+      );
+    } catch (error) {
+      await this.deleteMultipartBookingUploads(upload);
+      throw error;
+    }
+  }
+
+  private async createCustomerBookingFromResolvedItems(
+    user: AuthenticatedUser,
+    createBookingDto: CreateMultiBookingRequestDto,
+    resolvedItems: ResolvedBookingItem[],
+    commercialRegistryUrl?: string,
+    creatives?: BookingCreativeCreateInput[],
+  ) {
     const totals = this.calculateBookingTotals(resolvedItems);
     const legacyFirstItem = resolvedItems[0];
     const bookingRequest =
@@ -1251,6 +1335,7 @@ export class BillboardsService {
           customerCompanyScope: createBookingDto.customerCompanyScope,
           customerSector: createBookingDto.customerSector,
           customerNotes: createBookingDto.customerNotes,
+          commercialRegistryUrl,
           estimatedPrice: totals.totalAfterTax,
           subtotalBeforeTax: totals.subtotalBeforeTax,
           totalTaxAmount: totals.totalTaxAmount,
@@ -1264,9 +1349,21 @@ export class BillboardsService {
         resolvedItems.map((item) => this.toBookingRequestItemCreateInput(item)),
       );
 
+    if (creatives?.length) {
+      await this.createBookingItemCreatives(bookingRequest, resolvedItems, creatives);
+    }
+
     await this.notifyBookingCreated(bookingRequest.id, resolvedItems);
 
-    return this.withBookingBillboardMainImage(bookingRequest);
+    const updatedBooking =
+      creatives?.length
+        ? await this.billboardsRepository.findCustomerBookingRequest(
+            bookingRequest.id,
+            user.id,
+          )
+        : bookingRequest;
+
+    return this.withBookingBillboardMainImage(updatedBooking ?? bookingRequest);
   }
 
   async createCustomerBookingRequest(
@@ -1287,6 +1384,285 @@ export class BillboardsService {
       customerNotes: createBookingDto.customerNotes,
       customerCompanyScope: createBookingDto.customerCompanyScope,
     });
+  }
+
+  private async parseMultipartBookingUpload(
+    request: FastifyRequest,
+  ): Promise<MultipartBookingUpload> {
+    const multipartRequest = this.assertMultipartRequest(request);
+    const maxUploadSizeMb = this.configService.getOrThrow<number>(
+      'maxUploadSizeMb',
+    );
+    let metadata: CreateMultiBookingRequestDto | undefined;
+    const creativeImages = new Map<string, StoredUpload>();
+    const creativeFiles = new Map<string, StoredUpload>();
+    let commercialRegistry: StoredUpload | undefined;
+
+    try {
+      for await (const part of multipartRequest.parts({
+        limits: { fileSize: maxUploadSizeMb * 1024 * 1024, files: 250 },
+      })) {
+        if (part.type === 'field') {
+          if (part.fieldname === 'metadata') {
+            metadata = this.parseBookingMetadata(part.value);
+          }
+
+          continue;
+        }
+
+        if (part.fieldname.startsWith('creativeImage_')) {
+          const billboardId = part.fieldname.replace('creativeImage_', '');
+          if (creativeImages.has(billboardId)) {
+            throw new BadRequestException(
+              `Duplicate creativeImage for billboard ${billboardId}`,
+            );
+          }
+
+          creativeImages.set(
+            billboardId,
+            await this.storeInstallationUpload(
+              part,
+              'billboards/creatives',
+              billboardId,
+              ALLOWED_IMAGE_MIME_TYPES,
+            ),
+          );
+          continue;
+        }
+
+        if (part.fieldname.startsWith('creativeFile_')) {
+          const billboardId = part.fieldname.replace('creativeFile_', '');
+          if (creativeFiles.has(billboardId)) {
+            throw new BadRequestException(
+              `Duplicate creativeFile for billboard ${billboardId}`,
+            );
+          }
+
+          creativeFiles.set(
+            billboardId,
+            await this.storeInstallationUpload(
+              part,
+              'billboards/creatives',
+              billboardId,
+              this.creativeFileMimeTypes(),
+            ),
+          );
+          continue;
+        }
+
+        if (part.fieldname === 'commercialRegistry') {
+          if (commercialRegistry) {
+            throw new BadRequestException('Only one commercialRegistry file can be uploaded');
+          }
+
+          commercialRegistry = await this.storeInstallationUpload(
+            part,
+            'business-proofs',
+            'commercial-registry',
+            this.businessProofMimeTypes(),
+          );
+          continue;
+        }
+
+        throw new BadRequestException(`Unsupported file field ${part.fieldname}`);
+      }
+    } catch (error) {
+      await this.deleteMultipartBookingUploads({
+        metadata: metadata ?? ({} as CreateMultiBookingRequestDto),
+        creativeImages,
+        creativeFiles,
+        commercialRegistry,
+      });
+
+      if (this.isMultipartFileTooLargeError(error)) {
+        throw new BadRequestException(
+          `File size must not exceed ${maxUploadSizeMb}MB`,
+        );
+      }
+
+      throw error;
+    }
+
+    if (!metadata) {
+      await this.deleteMultipartBookingUploads({
+        metadata: {} as CreateMultiBookingRequestDto,
+        creativeImages,
+        creativeFiles,
+        commercialRegistry,
+      });
+      throw new BadRequestException('metadata field is required');
+    }
+
+    return { metadata, creativeImages, creativeFiles, commercialRegistry };
+  }
+
+  private parseBookingMetadata(value: unknown): CreateMultiBookingRequestDto {
+    let parsed: unknown;
+
+    try {
+      parsed = JSON.parse(String(value ?? ''));
+    } catch {
+      throw new BadRequestException('metadata must be valid JSON');
+    }
+
+    const dto = plainToInstance(CreateMultiBookingRequestDto, parsed);
+    const errors = validateSync(dto, {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    });
+
+    if (errors.length > 0) {
+      throw new BadRequestException('metadata validation failed');
+    }
+
+    return dto;
+  }
+
+  private resolveActualBillboardIds(resolvedItems: ResolvedBookingItem[]) {
+    const billboardIds = resolvedItems.flatMap((item) => item.billboardIds);
+    const uniqueBillboardIds = Array.from(new Set(billboardIds));
+
+    if (uniqueBillboardIds.length !== billboardIds.length) {
+      throw new BadRequestException(
+        'Booking items must not contain the same actual billboard more than once',
+      );
+    }
+
+    return uniqueBillboardIds;
+  }
+
+  private ensureCommercialRegistryUploaded(upload: MultipartBookingUpload) {
+    if (
+      (upload.metadata.customerCompanyScope === CustomerCompanyScope.LOCAL ||
+        upload.metadata.customerCompanyScope === CustomerCompanyScope.INTERNATIONAL) &&
+      !upload.commercialRegistry
+    ) {
+      throw new BadRequestException('commercialRegistry file is required');
+    }
+  }
+
+  private ensureCreativesUploadedForBillboards(
+    upload: MultipartBookingUpload,
+    billboardIds: string[],
+  ) {
+    const allowedBillboardIds = new Set(billboardIds);
+    const uploadedBillboardIds = new Set([
+      ...upload.creativeImages.keys(),
+      ...upload.creativeFiles.keys(),
+    ]);
+
+    for (const uploadedBillboardId of uploadedBillboardIds) {
+      if (!allowedBillboardIds.has(uploadedBillboardId)) {
+        throw new BadRequestException(
+          `Creative file uploaded for billboard ${uploadedBillboardId}, which is not in this booking`,
+        );
+      }
+    }
+
+    for (const billboardId of billboardIds) {
+      if (
+        !upload.creativeImages.has(billboardId) &&
+        !upload.creativeFiles.has(billboardId)
+      ) {
+        throw new BadRequestException(
+          `creativeImage_${billboardId} or creativeFile_${billboardId} is required`,
+        );
+      }
+    }
+  }
+
+  private async deleteMultipartBookingUploads(upload: MultipartBookingUpload) {
+    await Promise.all([
+      ...Array.from(upload.creativeImages.values()).map((item) =>
+        this.deleteStoredFile(item.filePath),
+      ),
+      ...Array.from(upload.creativeFiles.values()).map((item) =>
+        this.deleteStoredFile(item.filePath),
+      ),
+      upload.commercialRegistry
+        ? this.deleteStoredFile(upload.commercialRegistry.filePath)
+        : null,
+    ]);
+  }
+
+  private async createBookingItemCreatives(
+    bookingRequest: {
+      id: string;
+      items?: {
+        id: string;
+        itemType: BookingItemType;
+        billboardId?: string | null;
+        roadPackageId?: string | null;
+        offerId?: string | null;
+        startDate: Date;
+        endDate: Date;
+      }[];
+    },
+    resolvedItems: ResolvedBookingItem[],
+    creatives: BookingCreativeCreateInput[],
+  ) {
+    const createdItemsByKey = new Map<string, typeof bookingRequest.items>();
+
+    for (const item of bookingRequest.items ?? []) {
+      const key = this.bookingItemMatchKey(item);
+      const items = createdItemsByKey.get(key) ?? [];
+      items.push(item);
+      createdItemsByKey.set(key, items);
+    }
+
+    const resolvedItemByBillboardId = new Map<
+      string,
+      { bookingRequestItemId?: string }
+    >();
+
+    for (const resolvedItem of resolvedItems) {
+      const key = this.bookingItemMatchKey({
+        itemType: resolvedItem.input.itemType,
+        billboardId: resolvedItem.input.billboardId,
+        roadPackageId: resolvedItem.input.roadPackageId,
+        offerId: resolvedItem.input.offerId,
+        startDate: resolvedItem.input.startDate,
+        endDate: resolvedItem.input.endDate,
+      });
+      const createdItems = createdItemsByKey.get(key) ?? [];
+      const createdItem = createdItems.shift();
+
+      for (const billboardId of resolvedItem.billboardIds) {
+        resolvedItemByBillboardId.set(billboardId, {
+          bookingRequestItemId: createdItem?.id,
+        });
+      }
+    }
+
+    await this.prisma.bookingItemCreative.createMany({
+      data: creatives.map((creative) => ({
+        bookingRequestId: bookingRequest.id,
+        bookingRequestItemId: resolvedItemByBillboardId.get(creative.billboardId)
+          ?.bookingRequestItemId,
+        billboardId: creative.billboardId,
+        creativeImageUrl: creative.creativeImageUrl,
+        creativeFileUrl: creative.creativeFileUrl,
+        customerNotes: creative.customerNotes,
+      })),
+    });
+  }
+
+  private bookingItemMatchKey(item: {
+    itemType: BookingItemType;
+    billboardId?: string | null;
+    roadPackageId?: string | null;
+    offerId?: string | null;
+    startDate: Date;
+    endDate: Date;
+  }) {
+    return [
+      item.itemType,
+      item.billboardId ?? '',
+      item.roadPackageId ?? '',
+      item.offerId ?? '',
+      item.startDate.toISOString(),
+      item.endDate.toISOString(),
+    ].join('|');
   }
 
   async findCustomerBookingRequests(
@@ -1324,6 +1700,133 @@ export class BillboardsService {
     }
 
     return this.withBookingBillboardMainImage(bookingRequest);
+  }
+
+  async findCustomerBookingState(user: AuthenticatedUser, bookingId: string) {
+    this.ensureCustomer(user);
+    const bookingRequest =
+      await this.billboardsRepository.findCustomerBookingRequest(
+        bookingId,
+        user.id,
+      );
+
+    if (!bookingRequest) {
+      throw new NotFoundException('Booking request not found');
+    }
+
+    const installationUnits =
+      await this.prisma.billboardInstallationUnit.findMany({
+        where: {
+          deletedAt: null,
+          bookingRequestItem: {
+            bookingRequestId: bookingId,
+            bookingRequest: { customerId: user.id },
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+        include: {
+          billboard: { select: this.installationBillboardSelect() },
+          bookingRequestItem: {
+            select: {
+              id: true,
+              itemType: true,
+              bookingRequestId: true,
+              startDate: true,
+              endDate: true,
+            },
+          },
+          assignments: {
+            select: {
+              id: true,
+              status: true,
+              evidences: {
+                orderBy: { createdAt: 'desc' },
+                select: {
+                  id: true,
+                  url: true,
+                  type: true,
+                  notes: true,
+                  createdAt: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+    const creativesByBillboardId = new Map(
+      (bookingRequest.creatives ?? []).map((creative) => [
+        creative.billboardId,
+        creative,
+      ]),
+    );
+
+    return {
+      bookingId: bookingRequest.id,
+      bookingStatus: bookingRequest.status,
+      commercialRegistryUrl: bookingRequest.commercialRegistryUrl,
+      bookingItems: bookingRequest.items.map((item) => ({
+        id: item.id,
+        itemType: item.itemType,
+        status: item.status,
+        startDate: item.startDate,
+        endDate: item.endDate,
+        creatives: item.creatives.map((creative) => ({
+          billboardId: creative.billboardId,
+          billboard: creative.billboard,
+          creativeImageUrl: creative.creativeImageUrl,
+          creativeFileUrl: creative.creativeFileUrl,
+          hasCreative: Boolean(
+            creative.creativeImageUrl || creative.creativeFileUrl,
+          ),
+        })),
+      })),
+      creativeStatus: Array.from(creativesByBillboardId.values()).map(
+        (creative) => ({
+          billboardId: creative.billboardId,
+          billboard: creative.billboard,
+          creativeImageUrl: creative.creativeImageUrl,
+          creativeFileUrl: creative.creativeFileUrl,
+          hasCreative: Boolean(
+            creative.creativeImageUrl || creative.creativeFileUrl,
+          ),
+        }),
+      ),
+      installationUnits: installationUnits.map((unit) => ({
+        unitId: unit.id,
+        billboard: unit.billboard,
+        bookingRequestItem: unit.bookingRequestItem,
+        unitStatus: unit.status,
+        creativeImageUrl: unit.creativeImageUrl,
+        creativeFileUrl: unit.creativeFileUrl,
+        companyNotes: unit.companyNotes,
+        approvedAt: unit.approvedAt,
+        installationProofImages:
+          unit.status === InstallationUnitStatus.APPROVED
+            ? unit.assignments.flatMap((assignment) =>
+                assignment.evidences
+                  .filter(
+                    (evidence) =>
+                      evidence.type === InstallationEvidenceType.IMAGE,
+                  )
+                  .map((evidence) => ({
+                    id: evidence.id,
+                    url: evidence.url,
+                    notes: evidence.notes,
+                    createdAt: evidence.createdAt,
+                  })),
+              )
+            : [],
+      })),
+      currentStep: this.resolveCustomerBookingCurrentStep(
+        bookingRequest.status,
+        installationUnits.map((unit) => unit.status),
+      ),
+      steps: this.buildCustomerBookingSteps(
+        bookingRequest.status,
+        installationUnits.map((unit) => unit.status),
+      ),
+    };
   }
 
   async cancelCustomerBookingRequest(user: AuthenticatedUser, id: string) {
@@ -2025,6 +2528,7 @@ export class BillboardsService {
       where: { id: bookingRequestItemId },
       select: {
         id: true,
+        bookingRequestId: true,
         companyId: true,
         itemType: true,
         billboardId: true,
@@ -2048,23 +2552,54 @@ export class BillboardsService {
       return;
     }
 
+    const creatives = await this.prisma.bookingItemCreative.findMany({
+      where: {
+        bookingRequestId: item.bookingRequestId,
+        billboardId: { in: billboardIds },
+      },
+      select: {
+        billboardId: true,
+        creativeImageUrl: true,
+        creativeFileUrl: true,
+        customerNotes: true,
+      },
+    });
+    const creativeByBillboardId = new Map(
+      creatives.map((creative) => [creative.billboardId, creative]),
+    );
+
     await this.prisma.$transaction(
-      Array.from(new Set(billboardIds)).map((billboardId) =>
-        this.prisma.billboardInstallationUnit.upsert({
+      Array.from(new Set(billboardIds)).map((billboardId) => {
+        const creative = creativeByBillboardId.get(billboardId);
+
+        return this.prisma.billboardInstallationUnit.upsert({
           where: {
             bookingRequestItemId_billboardId: {
               bookingRequestItemId: item.id,
               billboardId,
             },
           },
-          update: {},
+          update: creative
+            ? {
+                creativeImageUrl: creative.creativeImageUrl,
+                creativeFileUrl: creative.creativeFileUrl,
+                customerNotes: creative.customerNotes,
+                status: InstallationUnitStatus.READY_FOR_ASSIGNMENT,
+              }
+            : {},
           create: {
             bookingRequestItemId: item.id,
             companyId: item.companyId,
             billboardId,
+            creativeImageUrl: creative?.creativeImageUrl,
+            creativeFileUrl: creative?.creativeFileUrl,
+            customerNotes: creative?.customerNotes,
+            status: creative
+              ? InstallationUnitStatus.READY_FOR_ASSIGNMENT
+              : InstallationUnitStatus.PENDING_CREATIVE,
           },
-        }),
-      ),
+        });
+      }),
     );
   }
 
@@ -2373,6 +2908,10 @@ export class BillboardsService {
     return new Map([...ALLOWED_IMAGE_MIME_TYPES, ['application/pdf', '.pdf']]);
   }
 
+  private businessProofMimeTypes() {
+    return new Map([...ALLOWED_IMAGE_MIME_TYPES, ['application/pdf', '.pdf']]);
+  }
+
   private async notifyInstallationReviewed(
     installationUnitId: string,
     approved: boolean,
@@ -2536,6 +3075,101 @@ export class BillboardsService {
       direction: true,
       media: { orderBy: this.billboardsRepository.mediaOrderBy() },
     } satisfies Prisma.BillboardSelect;
+  }
+
+  private resolveCustomerBookingCurrentStep(
+    bookingStatus: BookingRequestStatus,
+    installationStatuses: InstallationUnitStatus[],
+  ) {
+    if (
+      bookingStatus === BookingRequestStatus.REJECTED ||
+      bookingStatus === BookingRequestStatus.CANCELLED
+    ) {
+      return 'BOOKING_CLOSED';
+    }
+
+    if (
+      bookingStatus === BookingRequestStatus.PENDING_REVIEW ||
+      bookingStatus === BookingRequestStatus.PARTIALLY_APPROVED ||
+      bookingStatus === BookingRequestStatus.PARTIALLY_REJECTED
+    ) {
+      return 'COMPANY_REVIEW';
+    }
+
+    if (installationStatuses.length === 0) {
+      return 'INSTALLATION_PENDING';
+    }
+
+    if (
+      installationStatuses.every(
+        (status) => status === InstallationUnitStatus.APPROVED,
+      )
+    ) {
+      return 'INSTALLATION_APPROVED';
+    }
+
+    if (
+      installationStatuses.some((status) =>
+        ([
+          InstallationUnitStatus.ASSIGNED,
+          InstallationUnitStatus.IN_PROGRESS,
+          InstallationUnitStatus.SUBMITTED,
+          InstallationUnitStatus.REVISION_REQUIRED,
+        ] as InstallationUnitStatus[]).includes(status),
+      )
+    ) {
+      return 'INSTALLATION_IN_PROGRESS';
+    }
+
+    return 'READY_FOR_ASSIGNMENT';
+  }
+
+  private buildCustomerBookingSteps(
+    bookingStatus: BookingRequestStatus,
+    installationStatuses: InstallationUnitStatus[],
+  ) {
+    const bookingApproved = ([
+      BookingRequestStatus.APPROVED,
+      BookingRequestStatus.PARTIALLY_APPROVED,
+      BookingRequestStatus.PARTIALLY_REJECTED,
+    ] as BookingRequestStatus[]).includes(bookingStatus);
+    const installationStarted = installationStatuses.some((status) =>
+      ([
+        InstallationUnitStatus.ASSIGNED,
+        InstallationUnitStatus.IN_PROGRESS,
+        InstallationUnitStatus.SUBMITTED,
+        InstallationUnitStatus.REVISION_REQUIRED,
+        InstallationUnitStatus.APPROVED,
+      ] as InstallationUnitStatus[]).includes(status),
+    );
+    const installationApproved =
+      installationStatuses.length > 0 &&
+      installationStatuses.every(
+        (status) => status === InstallationUnitStatus.APPROVED,
+      );
+
+    return [
+      {
+        key: 'BOOKING_CREATED',
+        status: 'COMPLETED',
+      },
+      {
+        key: 'COMPANY_REVIEW',
+        status: bookingApproved ? 'COMPLETED' : 'CURRENT',
+      },
+      {
+        key: 'INSTALLATION',
+        status: installationStarted
+          ? installationApproved
+            ? 'COMPLETED'
+            : 'CURRENT'
+          : 'PENDING',
+      },
+      {
+        key: 'INSTALLATION_APPROVED',
+        status: installationApproved ? 'COMPLETED' : 'PENDING',
+      },
+    ];
   }
 
   private async getPartnerCompanyIdWithSubscription(

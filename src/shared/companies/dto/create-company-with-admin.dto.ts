@@ -41,6 +41,10 @@ export class CreateCompanyWithAdminDto {
   phone?: string;
 
   @IsOptional()
+  @IsString()
+  logoUrl?: string;
+
+  @IsOptional()
   @IsArray()
   @ArrayUnique()
   @IsEnum(ServiceType, { each: true })
