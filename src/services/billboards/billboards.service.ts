@@ -2270,7 +2270,7 @@ export class BillboardsService {
     const totalPages = Math.ceil(total / query.limit);
 
     return {
-      data,
+      data: data.map((unit) => this.withInstallationUnitMainImage(unit)),
       meta: {
         page: query.page,
         limit: query.limit,
@@ -2293,7 +2293,7 @@ export class BillboardsService {
       throw new NotFoundException('Installation unit not found');
     }
 
-    return unit;
+    return this.withInstallationUnitMainImage(unit);
   }
 
   async assignInstallationUnitInstallers(
@@ -3071,6 +3071,10 @@ export class BillboardsService {
       addressText: true,
       latitude: true,
       longitude: true,
+      width: true,
+      height: true,
+      hasLighting: true,
+      lightingPrice: true,
       type: true,
       direction: true,
       media: { orderBy: this.billboardsRepository.mediaOrderBy() },
@@ -4279,7 +4283,7 @@ export class BillboardsService {
 
   private toPublicOffer(offer: {
     items?: {
-      billboard?: { media?: { isMain: boolean }[]; [key: string]: unknown };
+      billboard?: { media?: { isMain: boolean }[]; [key: string]: unknown } | null;
       [key: string]: unknown;
     }[];
     [key: string]: unknown;
@@ -4303,6 +4307,10 @@ export class BillboardsService {
       billboard?: { media?: { isMain: boolean }[]; [key: string]: unknown } | null;
       [key: string]: unknown;
     }[];
+    creatives?: {
+      billboard?: { media?: { isMain: boolean }[]; [key: string]: unknown } | null;
+      [key: string]: unknown;
+    }[];
     [key: string]: unknown;
   }) {
     return {
@@ -4313,11 +4321,39 @@ export class BillboardsService {
       items: bookingRequest.items?.map((item) =>
         this.withBookingItemMainImages(item),
       ),
+      creatives: bookingRequest.creatives?.map((creative) => ({
+        ...creative,
+        billboard: creative.billboard
+          ? this.toPublicBillboard(creative.billboard)
+          : creative.billboard,
+      })),
     };
   }
 
   private withBookingItemMainImages<T extends {
     billboard?: { media?: { isMain: boolean }[]; [key: string]: unknown } | null;
+    roadPackage?: {
+      billboards?: { media?: { isMain: boolean }[]; [key: string]: unknown }[];
+      [key: string]: unknown;
+    } | null;
+    offer?: {
+      items?: {
+        billboard?: { media?: { isMain: boolean }[]; [key: string]: unknown } | null;
+        [key: string]: unknown;
+      }[];
+      [key: string]: unknown;
+    } | null;
+    creatives?: {
+      billboard?: { media?: { isMain: boolean }[]; [key: string]: unknown } | null;
+      [key: string]: unknown;
+    }[];
+    bookingRequest?: {
+      creatives?: {
+        billboard?: { media?: { isMain: boolean }[]; [key: string]: unknown } | null;
+        [key: string]: unknown;
+      }[];
+      [key: string]: unknown;
+    } | null;
     [key: string]: unknown;
   }>(item: T) {
     return {
@@ -4325,6 +4361,44 @@ export class BillboardsService {
       billboard: item.billboard
         ? this.toPublicBillboard(item.billboard)
         : item.billboard,
+      roadPackage: item.roadPackage
+        ? {
+            ...item.roadPackage,
+            billboards: item.roadPackage.billboards?.map((billboard) =>
+              this.toPublicBillboard(billboard),
+            ),
+          }
+        : item.roadPackage,
+      offer: item.offer ? this.toPublicOffer(item.offer) : item.offer,
+      creatives: item.creatives?.map((creative) => ({
+        ...creative,
+        billboard: creative.billboard
+          ? this.toPublicBillboard(creative.billboard)
+          : creative.billboard,
+      })),
+      bookingRequest: item.bookingRequest
+        ? {
+            ...item.bookingRequest,
+            creatives: item.bookingRequest.creatives?.map((creative) => ({
+              ...creative,
+              billboard: creative.billboard
+                ? this.toPublicBillboard(creative.billboard)
+                : creative.billboard,
+            })),
+          }
+        : item.bookingRequest,
+    };
+  }
+
+  private withInstallationUnitMainImage<T extends {
+    billboard?: { media?: { isMain: boolean }[]; [key: string]: unknown } | null;
+    [key: string]: unknown;
+  }>(unit: T) {
+    return {
+      ...unit,
+      billboard: unit.billboard
+        ? this.toPublicBillboard(unit.billboard)
+        : unit.billboard,
     };
   }
 

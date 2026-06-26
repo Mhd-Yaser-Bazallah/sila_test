@@ -800,29 +800,10 @@ export class BillboardsRepository extends BaseRepository<Billboard> {
         select: this.bookingBillboardSelect(),
       },
       roadPackage: {
-        select: {
-          id: true,
-          title: true,
-          direction: true,
-          billboardsCount: true,
-          status: true,
-        },
+        select: this.bookingRoadPackageSelect(),
       },
       offer: {
-        select: {
-          id: true,
-          title: true,
-          startsAt: true,
-          endsAt: true,
-          originalTotalPrice: true,
-          discountedTotalPrice: true,
-          localOriginalTotalPrice: true,
-          internationalOriginalTotalPrice: true,
-          localDiscountedTotalPrice: true,
-          internationalDiscountedTotalPrice: true,
-          currency: true,
-          status: true,
-        },
+        select: this.bookingOfferSelect(),
       },
       creatives: {
         orderBy: { createdAt: 'asc' },
@@ -847,29 +828,10 @@ export class BillboardsRepository extends BaseRepository<Billboard> {
         select: this.bookingBillboardSelect(),
       },
       roadPackage: {
-        select: {
-          id: true,
-          title: true,
-          direction: true,
-          billboardsCount: true,
-          status: true,
-        },
+        select: this.bookingRoadPackageSelect(),
       },
       offer: {
-        select: {
-          id: true,
-          title: true,
-          startsAt: true,
-          endsAt: true,
-          originalTotalPrice: true,
-          discountedTotalPrice: true,
-          localOriginalTotalPrice: true,
-          internationalOriginalTotalPrice: true,
-          localDiscountedTotalPrice: true,
-          internationalDiscountedTotalPrice: true,
-          currency: true,
-          status: true,
-        },
+        select: this.bookingOfferSelect(),
       },
       creatives: {
         orderBy: { createdAt: 'asc' },
@@ -886,10 +848,20 @@ export class BillboardsRepository extends BaseRepository<Billboard> {
     return {
       id: true,
       title: true,
-      city: true,
+      description: true,
       country: true,
       province: true,
+      city: true,
+      addressText: true,
+      latitude: true,
+      longitude: true,
+      width: true,
+      height: true,
       type: true,
+      printedSubtype: true,
+      direction: true,
+      hasLighting: true,
+      lightingPrice: true,
       price: true,
       localPrice: true,
       internationalPrice: true,
@@ -897,12 +869,74 @@ export class BillboardsRepository extends BaseRepository<Billboard> {
       internationalFlexPrice: true,
       localStandardAddedValue: true,
       internationalStandardAddedValue: true,
+      displayDurationSeconds: true,
       pricingUnit: true,
       currency: true,
+      taxRatePercent: true,
+      status: true,
+      roadPackageId: true,
+      isPackageOnly: true,
+      approvedAt: true,
       media: {
         orderBy: this.mediaOrderBy(),
       },
     } satisfies Prisma.BillboardSelect;
+  }
+
+  private bookingRoadPackageSelect() {
+    return {
+      id: true,
+      title: true,
+      description: true,
+      startLatitude: true,
+      startLongitude: true,
+      endLatitude: true,
+      endLongitude: true,
+      billboardsCount: true,
+      distanceBetweenBoards: true,
+      direction: true,
+      status: true,
+      approvedAt: true,
+      billboards: {
+        where: { deletedAt: null },
+        orderBy: { createdAt: 'asc' },
+        select: this.bookingBillboardSelect(),
+      },
+    } satisfies Prisma.RoadBillboardPackageSelect;
+  }
+
+  private bookingOfferSelect() {
+    return {
+      id: true,
+      title: true,
+      description: true,
+      startsAt: true,
+      endsAt: true,
+      originalTotalPrice: true,
+      discountedTotalPrice: true,
+      localOriginalTotalPrice: true,
+      internationalOriginalTotalPrice: true,
+      localDiscountedTotalPrice: true,
+      internationalDiscountedTotalPrice: true,
+      currency: true,
+      status: true,
+      approvedAt: true,
+      items: {
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          offerId: true,
+          billboardId: true,
+          priceSnapshot: true,
+          localPriceSnapshot: true,
+          internationalPriceSnapshot: true,
+          createdAt: true,
+          billboard: {
+            select: this.bookingBillboardSelect(),
+          },
+        },
+      },
+    } satisfies Prisma.OfferSelect;
   }
 
   private bookingBillboardInputSelect() {

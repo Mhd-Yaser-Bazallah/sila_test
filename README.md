@@ -452,7 +452,7 @@ commercialRegistry
 
 `creativeImage` accepts JPEG, PNG, and WebP. `creativeFile` accepts JPEG, PNG, WebP, or PDF. At least one of `creativeImage_<billboardId>` or `creativeFile_<billboardId>` is required for every actual billboard in the booking. A `BILLBOARD` item has one actual billboard; a `ROAD_PACKAGE` item expands to every billboard in the package; an `OFFER` item expands to every billboard in the offer. If any underlying package/offer billboard is missing creative, the whole booking is rejected.
 
-`commercialRegistry` is required for `LOCAL` and `INTERNATIONAL` company scopes and is stored under `uploads/business-proofs`. Partner booking item list/detail responses include the relevant creative files for company review. When a partner approves a booking item, installation units are created with the matching creative already copied in and are marked `READY_FOR_ASSIGNMENT`; older bookings without creatives still fall back to `PENDING_CREATIVE`.
+`commercialRegistry` is required for `LOCAL` and `INTERNATIONAL` company scopes and is stored under `uploads/business-proofs`. Partner booking item list/detail responses include the relevant creative files for company review and full billboard details, including size, lighting, pricing, media, and `mainImage`; road package and offer items include the same billboard detail shape for their underlying billboards. When a partner approves a booking item, installation units are created with the matching creative already copied in and are marked `READY_FOR_ASSIGNMENT`; older bookings without creatives still fall back to `PENDING_CREATIVE`.
 
 Customers can track booking and installation progress with:
 
