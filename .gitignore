@@ -83,3 +83,6 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 !/uploads/exhibitions/maps/
 /uploads/exhibitions/maps/*
 !/uploads/exhibitions/maps/.gitkeep
+!/uploads/exhibitions/heroes/
+/uploads/exhibitions/heroes/*
+!/uploads/exhibitions/heroes/.gitkeep

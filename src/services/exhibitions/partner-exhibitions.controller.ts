@@ -17,7 +17,6 @@ import type { AuthenticatedUser } from '../../shared/auth/interfaces/authenticat
 import { CreateBulkExhibitionBoothsDto } from './dto/create-bulk-exhibition-booths.dto';
 import { CreateExhibitionBoothDto } from './dto/create-exhibition-booth.dto';
 import { CreateExhibitionSectorDto } from './dto/create-exhibition-sector.dto';
-import { CreateExhibitionDto } from './dto/create-exhibition.dto';
 import { DeleteBulkExhibitionBoothsDto } from './dto/delete-bulk-exhibition-booths.dto';
 import { QueryExhibitionBoothsDto } from './dto/query-exhibition-booths.dto';
 import { QueryExhibitionSectorsDto } from './dto/query-exhibition-sectors.dto';
@@ -35,13 +34,10 @@ export class PartnerExhibitionsController {
   constructor(private readonly exhibitionsService: ExhibitionsService) {}
 
   @Post()
-  create(
-    @CurrentUser() user: AuthenticatedUser,
-    @Body() createExhibitionDto: CreateExhibitionDto,
-  ) {
-    return this.exhibitionsService.createPartnerExhibition(
+  create(@CurrentUser() user: AuthenticatedUser, @Req() request: FastifyRequest) {
+    return this.exhibitionsService.createPartnerExhibitionMultipart(
       user,
-      createExhibitionDto,
+      request,
     );
   }
 

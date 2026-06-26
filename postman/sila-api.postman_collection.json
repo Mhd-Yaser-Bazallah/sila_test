@@ -1478,15 +1478,27 @@
               ]
             },
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "header": [],
             "body": {
-              "mode": "raw",
-              "raw": "{\n  \"title\": \"Sila Expo 2026\",\n  \"subtitle\": \"Regional business exhibition\",\n  \"description\": \"A multi-sector exhibition for brands and visitors.\",\n  \"heroImageUrl\": \"https://example.com/exhibitions/sila-expo.jpg\",\n  \"secondaryHeroImageUrl\": \"https://example.com/exhibitions/sila-expo-secondary.jpg\",\n  \"visitorCount\": 12000,\n  \"participantCount\": 220,\n  \"participationDays\": 4,\n  \"startsAt\": \"2026-09-01T09:00:00.000Z\",\n  \"endsAt\": \"2026-09-04T18:00:00.000Z\",\n  \"venueName\": \"Sila Convention Center\",\n  \"country\": \"Syria\",\n  \"province\": \"Damascus\",\n  \"city\": \"Damascus\",\n  \"addressText\": \"Main exhibition grounds\",\n  \"aboutCards\": [\n    {\n      \"title\": \"About\",\n      \"text\": \"A focused exhibition for business growth.\",\n      \"sortOrder\": 0\n    }\n  ],\n  \"sectors\": [\n    {\n      \"title\": \"Technology\",\n      \"text\": \"Software, hardware, and services.\",\n      \"bullets\": [\n        \"SaaS\",\n        \"AI\",\n        \"Infrastructure\"\n      ],\n      \"sortOrder\": 0,\n      \"color\": \"#00AEEF\"\n    }\n  ],\n  \"participationFeatures\": [\n    {\n      \"title\": \"Lead generation\",\n      \"text\": \"Meet visitors and qualified buyers.\",\n      \"sortOrder\": 0\n    }\n  ]\n}"
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "metadata",
+                  "value": "{\n  \"title\": \"Damascus Expo 2026\",\n  \"subtitle\": \"International Business Exhibition\",\n  \"description\": \"A major exhibition for business and investment.\",\n  \"visitorCount\": 5000,\n  \"participantCount\": 120,\n  \"participationDays\": 4,\n  \"startsAt\": \"2026-08-01T00:00:00.000Z\",\n  \"endsAt\": \"2026-08-05T00:00:00.000Z\",\n  \"venueName\": \"Damascus Fairground\",\n  \"country\": \"Syria\",\n  \"province\": \"Damascus\",\n  \"city\": \"Damascus\",\n  \"addressText\": \"Damascus International Fairground\",\n  \"aboutCards\": [\n    {\n      \"title\": \"About\",\n      \"text\": \"A focused exhibition for business growth.\",\n      \"sortOrder\": 0\n    }\n  ],\n  \"sectors\": [\n    {\n      \"title\": \"Technology\",\n      \"text\": \"Software, hardware, and services.\",\n      \"bullets\": [\n        \"SaaS\",\n        \"AI\",\n        \"Infrastructure\"\n      ],\n      \"sortOrder\": 0,\n      \"color\": \"#00AEEF\"\n    }\n  ],\n  \"participationFeatures\": [\n    {\n      \"title\": \"Lead generation\",\n      \"text\": \"Meet visitors and qualified buyers.\",\n      \"sortOrder\": 0\n    }\n  ]\n}",
+                  "type": "text"
+                },
+                {
+                  "key": "heroImage",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "secondaryHeroImage",
+                  "type": "file",
+                  "src": [],
+                  "disabled": true
+                }
+              ]
             },
             "url": "{{base_url}}/partner/exhibitions"
           }

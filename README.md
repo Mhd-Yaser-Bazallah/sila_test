@@ -348,6 +348,30 @@ Uploaded files are ignored by Git. Placeholder `.gitkeep` files keep the upload 
 
 The Exhibitions service lets partner companies create exhibitions, upload a plan/map image or PDF, place booth shapes on top of the map, and submit the exhibition for super-admin approval.
 
+Partner exhibition creation uses multipart upload:
+
+```text
+POST /api/v1/partner/exhibitions
+multipart/form-data
+metadata: required JSON string with the exhibition fields
+heroImage: required JPEG, PNG, or WebP file
+secondaryHeroImage: optional JPEG, PNG, or WebP file
+```
+
+`metadata` contains the exhibition JSON fields such as `title`, `subtitle`, `description`, counts, dates, venue/address fields, `aboutCards`, `sectors`, and `participationFeatures`. Do not send `heroImageUrl` or `secondaryHeroImageUrl` when creating an exhibition; the backend stores uploaded hero files and writes the generated public URLs. Frontends should let the browser/client library set the multipart boundary and must not set `Content-Type` manually.
+
+Hero images are stored under:
+
+```text
+uploads/exhibitions/heroes
+```
+
+Public hero image URL format:
+
+```text
+http://localhost:3000/uploads/exhibitions/heroes/<filename>
+```
+
 Exhibition map files support URL-based fields and local Fastify multipart upload. Local map files are stored under:
 
 ```text
@@ -396,7 +420,7 @@ DELETE /api/v1/partner/exhibitions/:id/booths/bulk
 
 Bulk booth requests accept up to 200 booths or booth IDs per request and run in a transaction. Booths do not require admin approval and do not have an approval/rejection workflow.
 
-Exhibitions support both `heroImageUrl` and `secondaryHeroImageUrl` for public presentation, plus map image/PDF files for booth layout interactions.
+Exhibition responses include `heroImageUrl` and `secondaryHeroImageUrl` for public presentation, plus map image/PDF files for booth layout interactions. Creation generates hero URLs from uploaded files; update may still accept URL fields where supported by the update DTO.
 
 Super admins can review exhibitions, approve or reject submissions, archive exhibitions, monitor booths, and soft-delete exhibitions. They do not create, edit, delete, price, assign sectors, or upload map files for booths or exhibition content. Deleting an exhibition marks the exhibition and its booths as deleted, while preserving booking records and uploaded files for audit/history.
 

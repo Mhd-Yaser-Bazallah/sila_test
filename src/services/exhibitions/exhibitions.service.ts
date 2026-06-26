@@ -9,6 +9,8 @@ import { ConfigService } from '@nestjs/config';
 import '@fastify/multipart';
 import type { MultipartFile } from '@fastify/multipart';
 import type { FastifyRequest } from 'fastify';
+import { plainToInstance } from 'class-transformer';
+import { validateSync } from 'class-validator';
 import {
   CustomerCompanyScope,
   ExhibitionBookingItemStatus,
@@ -56,11 +58,13 @@ import {
 } from './exhibitions.repository';
 
 const EXHIBITION_MAP_UPLOAD_DIR = join('exhibitions', 'maps');
+const EXHIBITION_HERO_UPLOAD_DIR = join('exhibitions', 'heroes');
 const ALLOWED_MAP_IMAGE_MIME_TYPES = new Map([
   ['image/jpeg', '.jpg'],
   ['image/png', '.png'],
   ['image/webp', '.webp'],
 ]);
+const ALLOWED_HERO_IMAGE_MIME_TYPES = ALLOWED_MAP_IMAGE_MIME_TYPES;
 const MAP_PDF_MIME_TYPE = 'application/pdf';
 const BUSINESS_PROOF_UPLOAD_DIR = join('business-proofs');
 const ALLOWED_BUSINESS_PROOF_MIME_TYPES = new Map([
@@ -104,6 +108,18 @@ interface StoredMapFile {
   filePath: string;
 }
 
+interface ParsedHeroImagesUpload {
+  metadata?: CreateExhibitionDto;
+  heroImage?: StoredMapFile;
+  secondaryHeroImage?: StoredMapFile;
+}
+
+type ExhibitionDataDto = CreateExhibitionDto &
+  Pick<
+    Prisma.ExhibitionUncheckedCreateInput,
+    'heroImageUrl' | 'secondaryHeroImageUrl'
+  >;
+
 @Injectable()
 export class ExhibitionsService {
   constructor(
@@ -115,6 +131,36 @@ export class ExhibitionsService {
   async createPartnerExhibition(
     user: AuthenticatedUser,
     createExhibitionDto: CreateExhibitionDto,
+  ) {
+    return this.createPartnerExhibitionInternal(user, createExhibitionDto);
+  }
+
+  async createPartnerExhibitionMultipart(
+    user: AuthenticatedUser,
+    request: FastifyRequest,
+  ) {
+    const upload = await this.parseAndStoreHeroImagesUpload(request);
+
+    if (!upload.metadata || !upload.heroImage) {
+      await this.deleteStoredHeroImages(upload);
+      throw new BadRequestException('metadata and heroImage are required');
+    }
+
+    try {
+      return await this.createPartnerExhibitionInternal(user, {
+        ...upload.metadata,
+        heroImageUrl: upload.heroImage.url,
+        secondaryHeroImageUrl: upload.secondaryHeroImage?.url,
+      });
+    } catch (error) {
+      await this.deleteStoredHeroImages(upload);
+      throw error;
+    }
+  }
+
+  private async createPartnerExhibitionInternal(
+    user: AuthenticatedUser,
+    createExhibitionDto: CreateExhibitionDto | ExhibitionDataDto,
   ) {
     const companyId = await this.getPartnerCompanyIdWithSubscription(user);
     const slug = await this.generateUniqueSlug(createExhibitionDto.title);
@@ -1913,7 +1959,7 @@ export class ExhibitionsService {
   }
 
   private toExhibitionData(
-    dto: CreateExhibitionDto | UpdateExhibitionDto,
+    dto: ExhibitionDataDto | UpdateExhibitionDto,
   ): {
     data: Partial<Omit<
       Prisma.ExhibitionUncheckedCreateInput,
@@ -2131,6 +2177,116 @@ export class ExhibitionsService {
     return upload;
   }
 
+  private async parseAndStoreHeroImagesUpload(
+    request: FastifyRequest,
+  ): Promise<ParsedHeroImagesUpload> {
+    const multipartRequest = request as MultipartFastifyRequest;
+
+    if (!multipartRequest.isMultipart()) {
+      throw new BadRequestException('Request must be multipart/form-data');
+    }
+
+    const maxUploadSizeMb =
+      this.configService.getOrThrow<number>('maxUploadSizeMb');
+    const upload: ParsedHeroImagesUpload = {};
+
+    try {
+      for await (const part of multipartRequest.parts({
+        limits: {
+          fileSize: maxUploadSizeMb * 1024 * 1024,
+          files: 2,
+          fields: 1,
+          parts: 3,
+        },
+      })) {
+        if (part.type === 'field') {
+          if (part.fieldname !== 'metadata') {
+            throw new BadRequestException('Only metadata field is accepted');
+          }
+
+          if (upload.metadata) {
+            throw new BadRequestException('Only one metadata field is allowed');
+          }
+
+          upload.metadata = this.parseCreateExhibitionMetadata(part.value);
+          continue;
+        }
+
+        if (part.fieldname === 'heroImage') {
+          if (upload.heroImage) {
+            throw new BadRequestException('Only one heroImage file is allowed');
+          }
+
+          upload.heroImage = await this.storeHeroImage(part, 'hero');
+          continue;
+        }
+
+        if (part.fieldname === 'secondaryHeroImage') {
+          if (upload.secondaryHeroImage) {
+            throw new BadRequestException(
+              'Only one secondaryHeroImage file is allowed',
+            );
+          }
+
+          upload.secondaryHeroImage = await this.storeHeroImage(
+            part,
+            'secondary-hero',
+            'secondaryHeroImage',
+          );
+          continue;
+        }
+
+        throw new BadRequestException(
+          'File fields must be named heroImage or secondaryHeroImage',
+        );
+      }
+    } catch (error) {
+      await this.deleteStoredHeroImages(upload);
+
+      if (this.isMultipartFileTooLargeError(error)) {
+        throw new BadRequestException(
+          `File size must not exceed ${maxUploadSizeMb}MB`,
+        );
+      }
+
+      throw error;
+    }
+
+    if (!upload.metadata) {
+      await this.deleteStoredHeroImages(upload);
+      throw new BadRequestException('metadata field is required');
+    }
+
+    if (!upload.heroImage) {
+      await this.deleteStoredHeroImages(upload);
+      throw new BadRequestException('heroImage file is required');
+    }
+
+    return upload;
+  }
+
+  private parseCreateExhibitionMetadata(value: unknown): CreateExhibitionDto {
+    let parsed: unknown;
+
+    try {
+      parsed = JSON.parse(String(value ?? ''));
+    } catch {
+      throw new BadRequestException('metadata must be valid JSON');
+    }
+
+    const dto = plainToInstance(CreateExhibitionDto, parsed);
+    const errors = validateSync(dto, {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    });
+
+    if (errors.length > 0) {
+      throw new BadRequestException(errors);
+    }
+
+    return dto;
+  }
+
   private storeMapImage(file: MultipartFile, exhibitionId: string) {
     const extension = ALLOWED_MAP_IMAGE_MIME_TYPES.get(file.mimetype);
 
@@ -2163,6 +2319,27 @@ export class ExhibitionsService {
     return this.storeMultipartFile(
       file,
       BUSINESS_PROOF_UPLOAD_DIR,
+      entityId,
+      extension,
+    );
+  }
+
+  private storeHeroImage(
+    file: MultipartFile,
+    entityId: string,
+    fieldName = 'heroImage',
+  ) {
+    const extension = ALLOWED_HERO_IMAGE_MIME_TYPES.get(file.mimetype);
+
+    if (!extension) {
+      throw new BadRequestException(
+        `${fieldName} must be a JPEG, PNG, or WebP image`,
+      );
+    }
+
+    return this.storeMultipartFile(
+      file,
+      EXHIBITION_HERO_UPLOAD_DIR,
       entityId,
       extension,
     );
@@ -2241,6 +2418,17 @@ export class ExhibitionsService {
     await Promise.all([
       upload.mapImage ? this.deleteStoredFile(upload.mapImage.filePath) : null,
       upload.mapPdf ? this.deleteStoredFile(upload.mapPdf.filePath) : null,
+    ]);
+  }
+
+  private async deleteStoredHeroImages(
+    upload: ParsedHeroImagesUpload,
+  ): Promise<void> {
+    await Promise.all([
+      upload.heroImage ? this.deleteStoredFile(upload.heroImage.filePath) : null,
+      upload.secondaryHeroImage
+        ? this.deleteStoredFile(upload.secondaryHeroImage.filePath)
+        : null,
     ]);
   }
 

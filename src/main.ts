@@ -38,6 +38,7 @@ async function bootstrap() {
   mkdirSync(join(uploadRootPath, 'business-proofs'), { recursive: true });
   mkdirSync(join(uploadRootPath, 'companies', 'logos'), { recursive: true });
   mkdirSync(join(uploadRootPath, 'exhibitions', 'maps'), { recursive: true });
+  mkdirSync(join(uploadRootPath, 'exhibitions', 'heroes'), { recursive: true });
 
   await app.register(fastifyMultipart, {
     limits: {
